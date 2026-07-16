@@ -518,6 +518,45 @@
     );
   }
 
+  /**
+   * Übernimmt alle aktuell in den Match-Tabellen sichtbaren Werte in die persistenten
+   * Matching-Tabellen. Nötig, weil ein vorausgefüllter Vorschlag (Konfidenz-Prozent, aber
+   * unterhalb der Auto-Match-Schwelle) im Eingabefeld sichtbar ist, ohne dass je ein
+   * `change`-Event gefeuert wäre - ohne diesen Schritt würde die Übertragungs-Vorschau
+   * fälschlich "kein Treffer" melden, obwohl die Zeilen sichtbar befüllt sind.
+   */
+  function commitVisibleMatches() {
+    document.querySelectorAll("#student-match-table tbody tr").forEach((tr) => {
+      const formsName = tr.dataset.formsName;
+      if (tr.querySelector(".student-ignore").checked) return;
+      const input = tr.querySelector(".student-match-input");
+      const label = input.value.trim();
+      if (!label) return;
+      const id = idFromLabel(label);
+      if (id == null || !schuelerById.has(id)) return;
+      const existing = Matching.lookup(state.schuelerMatching, formsName);
+      if (!existing || existing.targetId !== id) {
+        Matching.setMatch(state.schuelerMatching, formsName, { targetId: id, targetLabel: label, manual: false });
+      }
+    });
+    document.querySelectorAll("#course-match-table tbody tr").forEach((tr) => {
+      const courseText = tr.dataset.courseText;
+      if (tr.querySelector(".course-ignore").checked) return;
+      const input = tr.querySelector(".course-match-input");
+      const label = input.value.trim();
+      if (!label) return;
+      const id = idFromLabel(label);
+      if (id == null || !kursById.has(id)) return;
+      const existing = Matching.lookup(state.kursMatching, courseText);
+      if (!existing || existing.targetId !== id) {
+        Matching.setMatch(state.kursMatching, courseText, { targetId: id, targetLabel: label, manual: false });
+      }
+    });
+    persist();
+    renderStudentMatchTable();
+    renderCourseMatchTable();
+  }
+
   function collectMatchedPairs() {
     const pairs = [];
     for (const entry of studentEntries) {
@@ -545,6 +584,7 @@
 
   async function onComputePreview() {
     const statusEl = $("transfer-preview-status");
+    commitVisibleMatches();
     const pairs = collectMatchedPairs();
     if (pairs.length === 0) {
       setStatus(statusEl, "Keine gematchten Schüler/Kurs-Kombinationen gefunden.", "warn");
