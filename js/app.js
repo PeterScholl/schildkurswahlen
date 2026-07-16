@@ -310,6 +310,49 @@
     return `<span class="confidence-badge none">kein Treffer</span>`;
   }
 
+  /** Ordnet einen Score/Zustand einer der Filter-Kategorien zu (saved/high/low/none/ignored). */
+  function statusCategory(score, source, ignored) {
+    if (ignored) return "ignored";
+    if (source === "saved") return "saved";
+    if (score >= Matching.DEFAULT_AUTO_THRESHOLD) return "high";
+    if (score > 0) return "low";
+    return "none";
+  }
+
+  function getCheckedFilterValues(containerId) {
+    return new Set(
+      Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map((i) => i.value)
+    );
+  }
+
+  function applyStudentFilter() {
+    const allowed = getCheckedFilterValues("student-status-filter");
+    document.querySelectorAll("#student-match-table tbody tr").forEach((tr) => {
+      tr.style.display = allowed.has(tr.dataset.status) ? "" : "none";
+    });
+  }
+
+  function applyCourseFilter() {
+    const allowed = getCheckedFilterValues("course-status-filter");
+    document.querySelectorAll("#course-match-table tbody tr").forEach((tr) => {
+      tr.style.display = allowed.has(tr.dataset.status) ? "" : "none";
+    });
+  }
+
+  function setStudentFilterOnly(values) {
+    document.querySelectorAll("#student-status-filter input").forEach((cb) => {
+      cb.checked = values.includes(cb.value);
+    });
+    applyStudentFilter();
+  }
+
+  function setCourseFilterOnly(values) {
+    document.querySelectorAll("#course-status-filter input").forEach((cb) => {
+      cb.checked = values.includes(cb.value);
+    });
+    applyCourseFilter();
+  }
+
   function renderStudentMatchTable() {
     const tbody = document.querySelector("#student-match-table tbody");
     tbody.innerHTML = "";
@@ -321,17 +364,22 @@
       let inputValue = "";
       let badgeHtml = confidenceBadge(0, null);
       let ignored = false;
+      let score = 0;
+      let source = null;
       if (saved) {
         ignored = !!saved.ignored;
         inputValue = ignored ? "" : saved.targetLabel || "";
         badgeHtml = ignored ? `<span class="confidence-badge low">ignoriert</span>` : confidenceBadge(1, "saved");
+        source = ignored ? null : "saved";
       } else {
         const suggestions = Matching.suggestStudentMatches(entry.formsName, schildSchueler, 1);
         if (suggestions.length && suggestions[0].score > 0.5) {
           inputValue = schuelerLabel(suggestions[0].item);
-          badgeHtml = confidenceBadge(suggestions[0].score, null);
+          score = suggestions[0].score;
+          badgeHtml = confidenceBadge(score, null);
         }
       }
+      tr.dataset.status = statusCategory(score, source, ignored);
 
       tr.innerHTML = `
         <td>${escapeHtml(entry.formsName)}</td>
@@ -343,6 +391,7 @@
     }
     tbody.querySelectorAll(".student-match-input").forEach((input) => input.addEventListener("change", onStudentMatchInputChange));
     tbody.querySelectorAll(".student-ignore").forEach((cb) => cb.addEventListener("change", onStudentIgnoreChange));
+    applyStudentFilter();
   }
 
   function onStudentMatchInputChange(evt) {
@@ -354,15 +403,19 @@
       Matching.clearMatch(state.schuelerMatching, formsName);
       evt.target.classList.remove("invalid", "auto");
       tr.querySelector(".match-status").innerHTML = confidenceBadge(0, null);
+      tr.dataset.status = "none";
     } else if (id != null && schuelerById.has(id)) {
       Matching.setMatch(state.schuelerMatching, formsName, { targetId: id, targetLabel: label, manual: true });
       evt.target.classList.remove("invalid");
       tr.querySelector(".match-status").innerHTML = confidenceBadge(1, "saved");
+      tr.dataset.status = "saved";
     } else {
       evt.target.classList.add("invalid");
       tr.querySelector(".match-status").innerHTML = `<span class="confidence-badge none">ungültig</span>`;
+      tr.style.display = ""; // ungültige Eingabe immer sichtbar lassen, unabhängig vom Filter
     }
     persist();
+    applyStudentFilter();
   }
 
   function onStudentIgnoreChange(evt) {
@@ -374,12 +427,15 @@
       input.value = "";
       input.disabled = true;
       tr.querySelector(".match-status").innerHTML = `<span class="confidence-badge low">ignoriert</span>`;
+      tr.dataset.status = "ignored";
     } else {
       Matching.clearMatch(state.schuelerMatching, formsName);
       input.disabled = false;
       tr.querySelector(".match-status").innerHTML = confidenceBadge(0, null);
+      tr.dataset.status = "none";
     }
     persist();
+    applyStudentFilter();
   }
 
   function onAutomatchStudents() {
@@ -413,17 +469,22 @@
       let inputValue = "";
       let badgeHtml = confidenceBadge(0, null);
       let ignored = false;
+      let score = 0;
+      let source = null;
       if (saved) {
         ignored = !!saved.ignored;
         inputValue = ignored ? "" : saved.targetLabel || "";
         badgeHtml = ignored ? `<span class="confidence-badge low">ignoriert</span>` : confidenceBadge(1, "saved");
+        source = ignored ? null : "saved";
       } else {
         const suggestions = Matching.suggestCourseMatches(courseText, schildKurse, 1);
         if (suggestions.length && suggestions[0].score > 0.5) {
           inputValue = kursLabel(suggestions[0].item);
-          badgeHtml = confidenceBadge(suggestions[0].score, null);
+          score = suggestions[0].score;
+          badgeHtml = confidenceBadge(score, null);
         }
       }
+      tr.dataset.status = statusCategory(score, source, ignored);
 
       tr.innerHTML = `
         <td>${escapeHtml(courseText)}</td>
@@ -435,6 +496,7 @@
     }
     tbody.querySelectorAll(".course-match-input").forEach((input) => input.addEventListener("change", onCourseMatchInputChange));
     tbody.querySelectorAll(".course-ignore").forEach((cb) => cb.addEventListener("change", onCourseIgnoreChange));
+    applyCourseFilter();
   }
 
   function onCourseMatchInputChange(evt) {
@@ -446,15 +508,19 @@
       Matching.clearMatch(state.kursMatching, courseText);
       evt.target.classList.remove("invalid");
       tr.querySelector(".match-status").innerHTML = confidenceBadge(0, null);
+      tr.dataset.status = "none";
     } else if (id != null && kursById.has(id)) {
       Matching.setMatch(state.kursMatching, courseText, { targetId: id, targetLabel: label, manual: true });
       evt.target.classList.remove("invalid");
       tr.querySelector(".match-status").innerHTML = confidenceBadge(1, "saved");
+      tr.dataset.status = "saved";
     } else {
       evt.target.classList.add("invalid");
       tr.querySelector(".match-status").innerHTML = `<span class="confidence-badge none">ungültig</span>`;
+      tr.style.display = ""; // ungültige Eingabe immer sichtbar lassen, unabhängig vom Filter
     }
     persist();
+    applyCourseFilter();
   }
 
   function onCourseIgnoreChange(evt) {
@@ -466,12 +532,15 @@
       input.value = "";
       input.disabled = true;
       tr.querySelector(".match-status").innerHTML = `<span class="confidence-badge low">ignoriert</span>`;
+      tr.dataset.status = "ignored";
     } else {
       Matching.clearMatch(state.kursMatching, courseText);
       input.disabled = false;
       tr.querySelector(".match-status").innerHTML = confidenceBadge(0, null);
+      tr.dataset.status = "none";
     }
     persist();
+    applyCourseFilter();
   }
 
   function onAutomatchCourses() {
@@ -775,6 +844,19 @@
     }
   }
 
+  /** Löscht den gesamten gespeicherten Zustand (localStorage) und startet die Seite neu,
+   *  damit auch der nicht-persistente Laufzeitzustand (geladene Schild-/Forms-Daten) sauber
+   *  zurückgesetzt wird. */
+  function onResetState() {
+    const sicher = confirm(
+      "Wirklich alle gespeicherten Zuordnungen und Einstellungen löschen? Das kann nicht rückgängig " +
+        "gemacht werden. Schild-Daten und Forms-Datei müssen danach erneut geladen werden."
+    );
+    if (!sicher) return;
+    localStorage.removeItem(Storage.STORAGE_KEY);
+    location.reload();
+  }
+
   // ---------- Initialisierung ----------
 
   function init() {
@@ -793,6 +875,14 @@
     $("btn-execute-transfer").addEventListener("click", onExecuteTransfer);
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);
+    $("btn-reset-state").addEventListener("click", onResetState);
+
+    document.querySelectorAll("#student-status-filter input").forEach((cb) => cb.addEventListener("change", applyStudentFilter));
+    document.querySelectorAll("#course-status-filter input").forEach((cb) => cb.addEventListener("change", applyCourseFilter));
+    $("btn-student-filter-unsicher").addEventListener("click", () => setStudentFilterOnly(["low", "none"]));
+    $("btn-student-filter-alle").addEventListener("click", () => setStudentFilterOnly(["saved", "high", "low", "none", "ignored"]));
+    $("btn-course-filter-unsicher").addEventListener("click", () => setCourseFilterOnly(["low", "none"]));
+    $("btn-course-filter-alle").addEventListener("click", () => setCourseFilterOnly(["saved", "high", "low", "none", "ignored"]));
   }
 
   document.addEventListener("DOMContentLoaded", init);

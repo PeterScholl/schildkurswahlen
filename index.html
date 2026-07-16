@@ -82,6 +82,19 @@
   <h2>4. Abgleich Schüler</h2>
   <button id="btn-automatch-students">Automatisch matchen</button>
   <span id="student-match-summary" class="status-msg"></span>
+
+  <div class="filter-row">
+    <div class="checkbox-row" id="student-status-filter">
+      <label><input type="checkbox" value="saved" checked /> Gespeichert</label>
+      <label><input type="checkbox" value="high" checked /> Hohe Konfidenz (Vorschlag)</label>
+      <label><input type="checkbox" value="low" checked /> Niedrige Konfidenz</label>
+      <label><input type="checkbox" value="none" checked /> Kein Treffer</label>
+      <label><input type="checkbox" value="ignored" checked /> Ignoriert</label>
+    </div>
+    <button type="button" class="btn-secondary" id="btn-student-filter-unsicher">Nur unsichere anzeigen</button>
+    <button type="button" class="btn-secondary" id="btn-student-filter-alle">Alle anzeigen</button>
+  </div>
+
   <div class="table-scroll">
     <table id="student-match-table">
       <thead><tr><th>Forms-Name</th><th>Schild-Schüler</th><th>Status</th><th>Ignorieren</th></tr></thead>
@@ -95,6 +108,19 @@
   <h2>5. Abgleich Kurse</h2>
   <button id="btn-automatch-courses">Automatisch matchen</button>
   <span id="course-match-summary" class="status-msg"></span>
+
+  <div class="filter-row">
+    <div class="checkbox-row" id="course-status-filter">
+      <label><input type="checkbox" value="saved" checked /> Gespeichert</label>
+      <label><input type="checkbox" value="high" checked /> Hohe Konfidenz (Vorschlag)</label>
+      <label><input type="checkbox" value="low" checked /> Niedrige Konfidenz</label>
+      <label><input type="checkbox" value="none" checked /> Kein Treffer</label>
+      <label><input type="checkbox" value="ignored" checked /> Ignoriert</label>
+    </div>
+    <button type="button" class="btn-secondary" id="btn-course-filter-unsicher">Nur unsichere anzeigen</button>
+    <button type="button" class="btn-secondary" id="btn-course-filter-alle">Alle anzeigen</button>
+  </div>
+
   <div class="table-scroll">
     <table id="course-match-table">
       <thead><tr><th>Forms-Kurstext</th><th>Schild-Kurs</th><th>Status</th><th>Ignorieren</th></tr></thead>
@@ -145,6 +171,7 @@
   <label class="file-btn">JSON laden
     <input type="file" id="import-json-input" accept=".json" />
   </label>
+  <button id="btn-reset-state" class="btn-danger">Zustand zurücksetzen</button>
   <span id="save-load-status" class="status-msg"></span>
 </section>
 
