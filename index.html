@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kurswahlen-Abgleich: Forms ↔ Schild</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header>
+  <h1>Kurswahlen-Abgleich: Forms ↔ Schild</h1>
+  <p class="subtitle">Gleicht Kurswahlen aus einer MS-Forms-Umfrage (xlsx) mit Schild (SVWS-Server) ab und überträgt sie als Leistungsdaten.</p>
+</header>
+
+<main>
+
+<section id="section-connection" class="card">
+  <h2>1. Verbindung zur Schild-Datenbank</h2>
+  <div class="grid-form">
+    <label>Host <small>(z.B. nightly.svws-nrw.de)</small>
+      <input type="text" id="conn-host" placeholder="nightly.svws-nrw.de" />
+    </label>
+    <label>Schema
+      <input type="text" id="conn-schema" placeholder="GymAbiLite" />
+    </label>
+    <label>Benutzername
+      <input type="text" id="conn-username" placeholder="admin" autocomplete="username" />
+    </label>
+    <label>Passwort <small>(wird nicht gespeichert)</small>
+      <input type="password" id="conn-password" autocomplete="current-password" />
+    </label>
+    <label>Schuljahr
+      <input type="number" id="conn-jahr" placeholder="2026" />
+    </label>
+    <label>Abschnitt
+      <input type="number" id="conn-abschnitt" min="1" max="2" placeholder="1" />
+    </label>
+  </div>
+  <button id="btn-connect">Verbinden</button>
+  <span id="connect-status" class="status-msg"></span>
+
+  <div id="status-katalog-wrapper" class="hidden">
+    <h3>Zu berücksichtigende Schüler-Status</h3>
+    <div id="status-katalog-container" class="checkbox-row"></div>
+  </div>
+</section>
+
+<section id="section-schild-data" class="card hidden">
+  <h2>2. Schild-Daten laden</h2>
+  <button id="btn-load-schild-data">Schüler &amp; Kurse laden</button>
+  <span id="schild-data-status" class="status-msg"></span>
+  <div id="schild-data-counts" class="counts"></div>
+</section>
+
+<section id="section-forms-import" class="card hidden">
+  <h2>3. Forms-Datei laden</h2>
+  <input type="file" id="forms-file-input" accept=".xlsx,.xls" />
+  <span id="forms-file-status" class="status-msg"></span>
+
+  <div id="forms-preview-wrapper" class="hidden table-scroll">
+    <table id="forms-preview-table"></table>
+  </div>
+
+  <div id="forms-mapping-wrapper" class="hidden">
+    <h3>Spaltenzuordnung</h3>
+    <div class="mapping-columns">
+      <div>
+        <h4>Namensspalte</h4>
+        <div id="forms-name-col-container" class="checkbox-row"></div>
+      </div>
+      <div>
+        <h4>Kurswahl-Spalten</h4>
+        <div id="forms-course-cols-container" class="checkbox-row"></div>
+      </div>
+    </div>
+    <button id="btn-apply-mapping">Auswahl übernehmen</button>
+    <span id="forms-mapping-status" class="status-msg"></span>
+  </div>
+</section>
+
+<section id="section-student-matching" class="card hidden">
+  <h2>4. Abgleich Schüler</h2>
+  <button id="btn-automatch-students">Automatisch matchen</button>
+  <span id="student-match-summary" class="status-msg"></span>
+  <div class="table-scroll">
+    <table id="student-match-table">
+      <thead><tr><th>Forms-Name</th><th>Schild-Schüler</th><th>Status</th><th>Ignorieren</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <datalist id="schueler-datalist"></datalist>
+</section>
+
+<section id="section-course-matching" class="card hidden">
+  <h2>5. Abgleich Kurse</h2>
+  <button id="btn-automatch-courses">Automatisch matchen</button>
+  <span id="course-match-summary" class="status-msg"></span>
+  <div class="table-scroll">
+    <table id="course-match-table">
+      <thead><tr><th>Forms-Kurstext</th><th>Schild-Kurs</th><th>Status</th><th>Ignorieren</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <datalist id="kurs-datalist"></datalist>
+</section>
+
+<section id="section-transfer" class="card hidden">
+  <h2>6. Übertragung</h2>
+  <div class="grid-form">
+    <label>Kursart-Fallback <small>(falls Kurs keine Kursart liefert)</small>
+      <input type="text" id="default-kursart" placeholder="z.B. AG" />
+    </label>
+    <label>Wochenstunden-Fallback
+      <input type="number" id="default-wochenstunden" min="0" value="0" />
+    </label>
+    <label>Umfang Lernstandsbericht
+      <select id="default-umfang">
+        <option value="V">V (voller Umfang)</option>
+        <option value="R">R (reduzierter Umfang)</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="default-auf-zeugnis" /> Auf Zeugnis</label>
+    <label><input type="checkbox" id="default-epochal" /> Epochalunterricht</label>
+  </div>
+
+  <button id="btn-compute-preview">Vorschau berechnen</button>
+  <span id="transfer-preview-status" class="status-msg"></span>
+  <div class="counts" id="transfer-preview-counts"></div>
+
+  <div class="table-scroll">
+    <table id="transfer-preview-table">
+      <thead><tr><th><input type="checkbox" id="transfer-select-all" checked /></th><th>Schüler</th><th>Kurs</th><th>Hinweis</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <button id="btn-execute-transfer" disabled>Übertragen starten</button>
+  <div id="transfer-log" class="log"></div>
+</section>
+
+<section id="section-save-load" class="card">
+  <h2>7. Speichern / Laden</h2>
+  <p class="hint">Zugangsdaten (Passwort) werden niemals gespeichert – weder im Browser-Speicher noch in der JSON-Datei.</p>
+  <button id="btn-export-json">Als JSON speichern</button>
+  <label class="file-btn">JSON laden
+    <input type="file" id="import-json-input" accept=".json" />
+  </label>
+  <span id="save-load-status" class="status-msg"></span>
+</section>
+
+</main>
+
+<footer>
+  <p>Zustand wird automatisch im Browser (localStorage) zwischengespeichert.</p>
+</footer>
+
+<script src="js/vendor/xlsx.full.min.js"></script>
+<script src="js/svwsApi.js"></script>
+<script src="js/formsImport.js"></script>
+<script src="js/matching.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
