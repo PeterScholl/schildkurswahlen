@@ -93,6 +93,43 @@ vorherige Schritt erledigt ist.
   werden dauerhaft gespeichert (Schlüssel = normalisierter Forms-Text) und bei künftigen Durchläufen
   zuerst nachgeschlagen, bevor neu gematcht wird – Korrekturen müssen also nur einmal gemacht werden.
 
+## Fehlerbehebungen während der Entwicklung
+
+Zwei reale Bugs wurden beim ersten Testlauf gegen einen echten Server gefunden und behoben – hier
+dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Änderungen relevant bleiben:
+
+1. **"Keine gematchten Schüler/Kurs-Kombinationen gefunden" trotz sichtbar korrekter Zuordnung in
+   Schritt 4/5.**
+   Ursache: In den Schritten 4 und 5 wird ein unsicherer Match-Vorschlag zwar direkt im Eingabefeld
+   vorausgefüllt (inkl. Konfidenz-Prozentwert), aber *nicht* automatisch in die persistente
+   Matching-Tabelle übernommen – das passiert bisher nur beim Klick auf "Automatisch matchen" (nur für
+   Treffer ≥ 82 % Konfidenz) oder bei einer manuellen Änderung des Feldes (löst ein `change`-Event aus).
+   Ein nur *angezeigter* Vorschlag, den niemand angefasst hat, landete also nie in der Tabelle, obwohl er
+   optisch wie ein fertiger Treffer aussah. `collectMatchedPairs()` in Schritt 6 fand dadurch nichts.
+   **Fix:** Neue Funktion `commitVisibleMatches()` in `js/app.js`, die vor der Vorschau-Berechnung
+   (`onComputePreview`) einmal alle aktuell sichtbaren Feldwerte beider Match-Tabellen einliest und – sofern
+   gültig und nicht ignoriert – in die persistenten Tabellen übernimmt. Damit kann "sieht gematcht aus" nie
+   mehr von "ist tatsächlich gematcht" abweichen.
+
+2. **Serverfehler (500) bei der Übertragung, aber nur für einen Teil der Batches (z.B. Batch 2, 3, 4, 6, 7,
+   9, 12, 13, 15 von 15, mit leerem Response-Body).**
+   Ursache: `POST .../leistungsdaten/create/multiple` scheint serverseitig transaktional zu sein – enthält
+   ein 50er-Batch auch nur einen problematischen Datensatz, scheitert der komplette Batch, obwohl die
+   übrigen 49 Einträge in Ordnung wären. Wahrscheinlichster Auslöser: Dieselbe (Schüler, Kurs)-Kombination
+   kam doppelt im Batch vor, z.B. weil ein:e Schüler:in dieselbe AG über zwei verschiedene Forms-Spalten
+   (zwei Wochentage) gewählt hatte, die beide auf denselben Schild-Kurs gematcht wurden.
+   **Fix, alle in `js/app.js`:**
+   - `collectMatchedPairs()` dedupliziert jetzt auf `Schüler-ID + Kurs-ID`; die Anzahl entfernter
+     Dopplungen wird in Schritt 6 als Hinweis angezeigt.
+   - `buildLeistungsdatenPayload()` sendet `fachID` jetzt explizit als `null` statt `undefined`, falls ein
+     Kurs kein zugeordnetes Fach hat (`JSON.stringify` entfernt `undefined`-Felder sonst stillschweigend
+     aus dem Payload – eine zweite denkbare Fehlerquelle für den Server).
+   - Neue Funktion `createBatchWithBisection()`: Scheitert ein Batch trotzdem, wird er rekursiv halbiert
+     und erneut versucht, bis entweder ein Teil-Batch durchgeht oder die einzelnen problematischen
+     Datensätze isoliert sind. Das Übertragungsprotokoll listet danach genau auf, welche(r) einzelne(n)
+     Schüler/Kurs-Kombination(en) tatsächlich nicht angelegt werden konnten, statt (wie zuvor) ganze
+     50er-Batches inklusive der darin enthaltenen validen Einträge als Verlust auszuweisen.
+
 ## Programmstruktur
 
 ```
@@ -160,6 +197,14 @@ Hält den nicht-persistenten Laufzeitzustand (geladene Schild-Daten, geparste Fo
 Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs der `index.html` mit den obigen
 Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung über
 `Storage.scheduleSave(state)` gesichert.
+
+Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen während der Entwicklung" oben:
+
+- `commitVisibleMatches()`: übernimmt sichtbare, aber noch nicht bestätigte Match-Vorschläge in die
+  persistenten Tabellen, bevor die Vorschau berechnet wird.
+- `collectMatchedPairs()`: sammelt alle gematchten Schüler×Kurs-Kombinationen und dedupliziert sie.
+- `createBatchWithBisection(rows)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis die
+  einzelnen fehlerhaften Datensätze isoliert sind, statt einen ganzen Batch zu verwerfen.
 
 ## Bekannte Grenzen / mögliche Erweiterungen
 

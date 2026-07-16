@@ -557,8 +557,18 @@
     renderCourseMatchTable();
   }
 
+  /**
+   * Sammelt alle gematchten Schüler×Kurs-Kombinationen. Dedupliziert dabei bewusst auf
+   * (Schüler-ID, Kurs-ID): Verschiedene Forms-Spalten/-Zeilen können auf denselben Schild-Kurs
+   * matchen (z.B. zwei Namensschreibweisen derselben Person, oder zwei Wochentags-Spalten mit
+   * demselben Kurstext). Ohne Deduplizierung würde derselbe Datensatz zweimal zur Übertragung
+   * vorgeschlagen - der SVWS-Server beantwortet einen Batch, der eine solche Dopplung enthält,
+   * mit einem Serverfehler (500) für den kompletten Batch.
+   */
   function collectMatchedPairs() {
     const pairs = [];
+    const seenPairKeys = new Set();
+    let duplicates = 0;
     for (const entry of studentEntries) {
       const studentMatch = Matching.lookup(state.schuelerMatching, entry.formsName);
       if (!studentMatch || studentMatch.ignored || studentMatch.targetId == null) continue;
@@ -569,10 +579,16 @@
         if (!courseMatch || courseMatch.ignored || courseMatch.targetId == null) continue;
         const kurs = kursById.get(courseMatch.targetId);
         if (!kurs) continue;
+        const pairKey = `${schueler.id}|${kurs.id}`;
+        if (seenPairKeys.has(pairKey)) {
+          duplicates++;
+          continue;
+        }
+        seenPairKeys.add(pairKey);
         pairs.push({ schueler, kurs });
       }
     }
-    return pairs;
+    return { pairs, duplicates };
   }
 
   function getLernabschnittsdatenCached(schuelerId) {
@@ -585,12 +601,13 @@
   async function onComputePreview() {
     const statusEl = $("transfer-preview-status");
     commitVisibleMatches();
-    const pairs = collectMatchedPairs();
+    const { pairs, duplicates } = collectMatchedPairs();
     if (pairs.length === 0) {
       setStatus(statusEl, "Keine gematchten Schüler/Kurs-Kombinationen gefunden.", "warn");
       return;
     }
-    setStatus(statusEl, `Prüfe ${pairs.length} Kombinationen gegen bestehende Leistungsdaten …`, "");
+    const dupHint = duplicates > 0 ? ` (${duplicates} Dopplungen automatisch entfernt)` : "";
+    setStatus(statusEl, `Prüfe ${pairs.length} Kombinationen${dupHint} gegen bestehende Leistungsdaten …`, "");
 
     const uniqueSchuelerIds = Array.from(new Set(pairs.map((p) => p.schueler.id)));
     const lernabschnittsdatenBySchueler = new Map();
@@ -662,7 +679,7 @@
     const d = state.leistungsdatenDefaults;
     return {
       lernabschnittID: row.lernabschnittID,
-      fachID: row.kurs.idFach,
+      fachID: row.kurs.idFach ?? null,
       kursID: row.kurs.id,
       kursart: row.kurs.kursartAllg || d.kursartFallback || null,
       wochenstunden: row.kurs.wochenstunden ?? d.wochenstundenFallback ?? 0,
@@ -671,6 +688,30 @@
       umfangLernstandsbericht: d.umfangLernstandsbericht || "V",
       textFachbezogeneLernentwicklung: "",
     };
+  }
+
+  /**
+   * Legt `rows` als Batch an. Der SVWS-Server beantwortet einen Batch offenbar transaktional:
+   * Enthält er auch nur einen ungültigen Datensatz (z.B. Dopplung, die trotz Deduplizierung
+   * durch einen abweichenden Datenstand entstanden ist), schlägt der GESAMTE Batch mit 500 fehl
+   * - auch die 49 unproblematischen Einträge. Um das nicht auf Kosten gültiger Einträge gehen zu
+   * lassen, wird ein fehlgeschlagener Batch bei einem Fehler rekursiv halbiert, bis entweder ein
+   * Teil-Batch durchgeht oder der/die einzelne(n) problematische(n) Datensätze isoliert sind.
+   */
+  async function createBatchWithBisection(rows) {
+    if (rows.length === 0) return { ok: 0, failed: [] };
+    try {
+      await SvwsApi.createLeistungsdatenMultiple(rows.map(buildLeistungsdatenPayload));
+      return { ok: rows.length, failed: [] };
+    } catch (err) {
+      if (rows.length === 1) {
+        return { ok: 0, failed: [{ row: rows[0], message: err.message }] };
+      }
+      const mid = Math.ceil(rows.length / 2);
+      const left = await createBatchWithBisection(rows.slice(0, mid));
+      const right = await createBatchWithBisection(rows.slice(mid));
+      return { ok: left.ok + right.ok, failed: [...left.failed, ...right.failed] };
+    }
   }
 
   async function onExecuteTransfer() {
@@ -688,21 +729,28 @@
 
     const batchSize = 50;
     let ok = 0;
-    let failed = 0;
+    const failedRows = [];
     for (let i = 0; i < toSend.length; i += batchSize) {
       const batch = toSend.slice(i, i + batchSize);
-      const payloads = batch.map(buildLeistungsdatenPayload);
-      try {
-        await SvwsApi.createLeistungsdatenMultiple(payloads);
-        ok += batch.length;
-        log.textContent += `Batch ${i / batchSize + 1}: ${batch.length} Einträge erfolgreich angelegt.\n`;
-      } catch (err) {
-        failed += batch.length;
-        log.textContent += `Batch ${i / batchSize + 1}: FEHLER – ${err.message}\n`;
-      }
+      const batchNum = i / batchSize + 1;
+      const result = await createBatchWithBisection(batch);
+      ok += result.ok;
+      failedRows.push(...result.failed);
+      log.textContent +=
+        result.failed.length === 0
+          ? `Batch ${batchNum}: ${result.ok} Einträge erfolgreich angelegt.\n`
+          : `Batch ${batchNum}: ${result.ok} erfolgreich, ${result.failed.length} fehlgeschlagen (einzeln isoliert).\n`;
       log.scrollTop = log.scrollHeight;
     }
-    log.textContent += `Fertig: ${ok} erfolgreich, ${failed} fehlgeschlagen.\n`;
+
+    if (failedRows.length > 0) {
+      log.textContent += `\nFehlgeschlagene Einträge im Detail:\n`;
+      for (const f of failedRows) {
+        log.textContent += `- ${f.row.schuelerLabel} / ${f.row.kursLabel}: ${f.message}\n`;
+      }
+    }
+    log.textContent += `\nFertig: ${ok} erfolgreich, ${failedRows.length} fehlgeschlagen.\n`;
+    log.scrollTop = log.scrollHeight;
     $("btn-execute-transfer").disabled = false;
   }
 
