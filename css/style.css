@@ -161,6 +161,20 @@ thead th {
 tbody td { padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 
+.th-sort-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-weight: 600;
+  font-size: inherit;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.th-sort-btn:hover { color: var(--accent); }
+.th-sort-btn.sort-active { color: var(--accent); }
+
 .match-input { width: 100%; min-width: 220px; }
 .match-input.invalid { border-color: var(--error); }
 .match-input.auto { border-color: var(--ok); }

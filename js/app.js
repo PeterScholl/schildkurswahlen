@@ -490,6 +490,14 @@
     return ids;
   }
 
+  let missingStudentsSort = { key: "name", dir: "asc" };
+
+  function compareMissingStudents(a, b, key) {
+    if (key === "id") return a.id - b.id;
+    if (key === "klasse") return a.klasse.localeCompare(b.klasse, "de", { numeric: true });
+    return a.nachname.localeCompare(b.nachname, "de") || a.vorname.localeCompare(b.vorname, "de");
+  }
+
   function onCheckMissingStudents() {
     const matchedIds = getMatchedSchuelerIds();
     missingStudents = schildSchueler
@@ -499,8 +507,7 @@
         nachname: s.nachname,
         vorname: s.vorname,
         klasse: schuelerIdToKlasse.get(s.id) || "–",
-      }))
-      .sort((a, b) => a.nachname.localeCompare(b.nachname, "de") || a.vorname.localeCompare(b.vorname, "de"));
+      }));
 
     renderMissingStudentsKlasseFilter();
     renderMissingStudentsTable();
@@ -523,10 +530,36 @@
     if (klassen.includes(previousValue)) select.value = previousValue;
   }
 
+  function updateMissingStudentsSortIndicators() {
+    document.querySelectorAll("#missing-students-table .th-sort-btn").forEach((btn) => {
+      const active = btn.dataset.sortKey === missingStudentsSort.key;
+      const arrow = active ? (missingStudentsSort.dir === "asc" ? " ▲" : " ▼") : "";
+      btn.textContent = btn.dataset.label + arrow;
+      btn.classList.toggle("sort-active", active);
+    });
+  }
+
+  function onMissingStudentsSortClick(evt) {
+    const btn = evt.target.closest(".th-sort-btn");
+    if (!btn) return;
+    const key = btn.dataset.sortKey;
+    if (missingStudentsSort.key === key) {
+      missingStudentsSort.dir = missingStudentsSort.dir === "asc" ? "desc" : "asc";
+    } else {
+      missingStudentsSort = { key, dir: "asc" };
+    }
+    updateMissingStudentsSortIndicators();
+    renderMissingStudentsTable();
+  }
+
   function renderMissingStudentsTable() {
     const tbody = document.querySelector("#missing-students-table tbody");
     const selectedKlasse = $("missing-students-klasse-filter").value;
-    const rows = selectedKlasse ? missingStudents.filter((s) => s.klasse === selectedKlasse) : missingStudents;
+    let rows = selectedKlasse ? missingStudents.filter((s) => s.klasse === selectedKlasse) : missingStudents;
+    rows = [...rows].sort((a, b) => {
+      const cmp = compareMissingStudents(a, b, missingStudentsSort.key);
+      return missingStudentsSort.dir === "asc" ? cmp : -cmp;
+    });
     tbody.innerHTML = rows
       .map(
         (s) =>
@@ -667,13 +700,15 @@
   }
 
   /**
-   * Übernimmt alle aktuell in den Match-Tabellen sichtbaren Werte in die persistenten
-   * Matching-Tabellen. Nötig, weil ein vorausgefüllter Vorschlag (Konfidenz-Prozent, aber
+   * Übernimmt alle aktuell in der Schüler-Match-Tabelle sichtbaren Werte in die persistente
+   * Matching-Tabelle. Nötig, weil ein vorausgefüllter Vorschlag (Konfidenz-Prozent, aber
    * unterhalb der Auto-Match-Schwelle) im Eingabefeld sichtbar ist, ohne dass je ein
-   * `change`-Event gefeuert wäre - ohne diesen Schritt würde die Übertragungs-Vorschau
-   * fälschlich "kein Treffer" melden, obwohl die Zeilen sichtbar befüllt sind.
+   * `change`-Event gefeuert wäre - ohne diesen Schritt würden weder die Übertragungs-Vorschau
+   * (Schritt 6) noch "Schüler ohne Forms-Abgabe" (Schritt 4a) diese Zeilen als gematcht erkennen,
+   * obwohl sie sichtbar befüllt sind. Gibt die Anzahl neu übernommener Zeilen zurück.
    */
-  function commitVisibleMatches() {
+  function commitVisibleStudentMatches() {
+    let count = 0;
     document.querySelectorAll("#student-match-table tbody tr").forEach((tr) => {
       const formsName = tr.dataset.formsName;
       if (tr.querySelector(".student-ignore").checked) return;
@@ -685,8 +720,17 @@
       const existing = Matching.lookup(state.schuelerMatching, formsName);
       if (!existing || existing.targetId !== id) {
         Matching.setMatch(state.schuelerMatching, formsName, { targetId: id, targetLabel: label, manual: false });
+        count++;
       }
     });
+    persist();
+    renderStudentMatchTable();
+    return count;
+  }
+
+  /** Analog zu `commitVisibleStudentMatches()`, aber für die Kurs-Match-Tabelle (Schritt 5). */
+  function commitVisibleCourseMatches() {
+    let count = 0;
     document.querySelectorAll("#course-match-table tbody tr").forEach((tr) => {
       const courseText = tr.dataset.courseText;
       if (tr.querySelector(".course-ignore").checked) return;
@@ -698,11 +742,26 @@
       const existing = Matching.lookup(state.kursMatching, courseText);
       if (!existing || existing.targetId !== id) {
         Matching.setMatch(state.kursMatching, courseText, { targetId: id, targetLabel: label, manual: false });
+        count++;
       }
     });
     persist();
-    renderStudentMatchTable();
     renderCourseMatchTable();
+    return count;
+  }
+
+  function commitVisibleMatches() {
+    commitVisibleStudentMatches();
+    commitVisibleCourseMatches();
+  }
+
+  function onSaveStudentMatches() {
+    const count = commitVisibleStudentMatches();
+    setStatus(
+      $("student-match-summary"),
+      count > 0 ? `${count} Zuordnung(en) gespeichert.` : "Keine neuen Zuordnungen zu speichern.",
+      "ok"
+    );
   }
 
   /**
@@ -948,9 +1007,12 @@
     $("forms-file-input").addEventListener("change", onFormsFileSelected);
     $("btn-apply-mapping").addEventListener("click", onApplyMapping);
     $("btn-automatch-students").addEventListener("click", onAutomatchStudents);
+    $("btn-save-student-matches").addEventListener("click", onSaveStudentMatches);
     $("btn-check-missing-students").addEventListener("click", onCheckMissingStudents);
     $("missing-students-klasse-filter").addEventListener("change", renderMissingStudentsTable);
     $("missing-students-klasse-filter").addEventListener("input", renderMissingStudentsTable);
+    document.querySelector("#missing-students-table thead").addEventListener("click", onMissingStudentsSortClick);
+    updateMissingStudentsSortIndicators();
     $("btn-automatch-courses").addEventListener("click", onAutomatchCourses);
     $("btn-compute-preview").addEventListener("click", onComputePreview);
     $("transfer-select-all").addEventListener("change", onTransferSelectAll);

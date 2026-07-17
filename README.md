@@ -35,6 +35,10 @@ vorherige Schritt erledigt ist.
    Eingabefelder sind Autocomplete-Felder (Datalist) über alle geladenen Schüler – einfach tippen und aus
    der Liste wählen. Über die Checkbox "Ignorieren" lässt sich eine Person bewusst von der Übertragung
    ausschließen (z.B. Karteileichen, Fake-Testeinträge).
+   Der Button "Speichern" übernimmt alle aktuell sichtbaren (auch die nur vorausgefüllten, noch nicht per
+   Klick bestätigten) Zuordnungen fest in die Matching-Tabelle – ohne das muss man sonst erst bis Schritt 6
+   vorspulen, damit eine Zuordnung "zählt". Insbesondere Schritt 4a (Schüler ohne Forms-Abgabe) liest nur
+   fest gespeicherte Zuordnungen, daher lohnt sich ein Klick auf "Speichern" hier, bevor man dort prüft.
    Über die Status-Checkboxen ("Gespeichert", "Hohe Konfidenz", "Niedrige Konfidenz", "Kein Treffer",
    "Ignoriert") lässt sich die Tabelle nach diesen Kategorien filtern; der Button "Nur unsichere anzeigen"
    blendet mit einem Klick alles bis auf "Niedrige Konfidenz" und "Kein Treffer" aus – praktisch, um sich
@@ -46,7 +50,9 @@ vorherige Schritt erledigt ist.
    einzelne Klasse eingrenzen; nach der ersten Auswahl per Maus lässt sich mit den Pfeiltasten hoch/runter
    klassenweise weiterblättern (Standardverhalten von `<select>`-Feldern in Browsern, kein Zusatzcode
    nötig). Nützlich z.B., um am Ende einer Umfrage klassenweise nachzuhaken, wer noch nicht abgestimmt
-   hat.
+   hat. Alle drei Spaltenüberschriften (Name, Schild-ID, Klasse) sind klickbar und sortieren die Tabelle
+   danach (nochmaliger Klick kehrt die Richtung um, ein ▲/▼ zeigt Spalte und Richtung an); die
+   Klassen-Sortierung ist "natürlich" (5a, 5b, 9c, 10a – nicht alphabetisch 10a vor 5a).
 5. **Abgleich Kurse**: Analog für die Menge der unterschiedlichen Kurswahl-Texte (nicht pro Person,
    sondern einmal pro eindeutigem Text – bei 500 Schüler:innen mit denselben 20 AGs muss man also nur
    20 Zuordnungen treffen, nicht 500). Auch hier lassen sich Werte wie "kein Angebot" oder "Lernzeit"
@@ -237,8 +243,11 @@ Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten �
 
 Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen während der Entwicklung" oben:
 
-- `commitVisibleMatches()`: übernimmt sichtbare, aber noch nicht bestätigte Match-Vorschläge in die
-  persistenten Tabellen, bevor die Vorschau berechnet wird.
+- `commitVisibleStudentMatches()` / `commitVisibleCourseMatches()`: übernehmen sichtbare, aber noch nicht
+  bestätigte Match-Vorschläge der jeweiligen Tabelle in die persistente Matching-Tabelle und geben die
+  Anzahl neu übernommener Zeilen zurück. Werden vom "Speichern"-Button in Schritt 4 (nur Schüler) bzw.
+  intern von `commitVisibleMatches()` (beide zusammen, vor der Vorschau-Berechnung in Schritt 6)
+  aufgerufen.
 - `collectMatchedPairs()`: sammelt alle gematchten Schüler×Kurs-Kombinationen und dedupliziert sie.
 - `createBatchWithBisection(rows)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis die
   einzelnen fehlerhaften Datensätze isoliert sind, statt einen ganzen Batch zu verwerfen.
