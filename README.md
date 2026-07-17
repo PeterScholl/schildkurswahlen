@@ -153,10 +153,18 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    gibt genau dieser Endpunkt serverseitig einen 500 auf die CORS-Preflight-Anfrage zurück (ein Problem
    auf der Server-Seite, nicht am Request des Tools) – `Promise.all()` lässt dadurch den kompletten
    Schritt scheitern, obwohl Schüler/Kurse/Fächer einzeln betrachtet erfolgreich geladen worden wären.
-   **Fix:** `getKlassen()` wird in `onLoadSchildData()` jetzt in einem eigenen, isolierten `try/catch`
-   aufgerufen statt im gemeinsamen `Promise.all()`. Schlägt es fehl, bleibt die Klassen-Liste einfach leer
-   (Klasse wird in Schritt 4a dann als "–" angezeigt) und es erscheint ein Warnhinweis – der Rest des
-   Schrittes (Schüler, Kurse, Fächer) funktioniert unabhängig davon weiter.
+   **Fix, zweistufig:**
+   - `getKlassen()` wird in `onLoadSchildData()` in einem eigenen, isolierten `try/catch` aufgerufen statt
+     im gemeinsamen `Promise.all()`. Schlägt es fehl, bleibt die Klassen-Info einfach leer (Klasse wird in
+     Schritt 4a dann als "–" angezeigt) und es erscheint ein Warnhinweis – der Rest des Schrittes (Schüler,
+     Kurse, Fächer) funktioniert unabhängig davon weiter.
+   - Der Endpunkt selbst wurde wegen des serverseitigen Bugs von `/klassen/minimal/abschnitt/{id}` auf
+     `/klassen/details/abschnitt/{id}` umgestellt (funktionierte auf dem betroffenen Server einwandfrei).
+     Dieser liefert `KlassenDaten` statt `KlassenDatenMinimal` – deutlich umfangreicher, aber mit einem
+     praktischen Nebeneffekt: Jede Klasse bringt ihr `schueler[]`-Array direkt mit (Schüler-ID, Name,
+     Status). Damit lässt sich die Zuordnung Schüler→Klasse direkt aus den Klassendaten aufbauen
+     (`schuelerIdToKlasse`, in `js/app.js`), ohne über das `idKlasse`-Feld der Schülerliste gehen zu
+     müssen – eine Cross-Reference weniger.
 
 ## Programmstruktur
 
@@ -184,7 +192,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getStatusKatalog()` | `GET /schule/schueler/status` | Katalog der Schüler-Status |
 | `getSchuelerListe(abschnittId)` | `GET /schueler/abschnitt/{id}` | Schülerliste des Abschnitts |
 | `getKurse(abschnittId)` | `GET /kurse/abschnitt/{id}` | Kursliste des Abschnitts |
-| `getKlassen(abschnittId)` | `GET /klassen/minimal/abschnitt/{id}` | Klassenliste des Abschnitts (für Klassen-Kürzel) |
+| `getKlassen(abschnittId)` | `GET /klassen/details/abschnitt/{id}` | Klassenliste inkl. `schueler[]` je Klasse (für Klassen-Kürzel je Schüler) |
 | `getFaecher()` | `GET /faecher` | Fächerliste |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |

@@ -18,7 +18,7 @@
   let schildKlassen = [];
   let schuelerById = new Map();
   let kursById = new Map();
-  let klassenKuerzelById = new Map();
+  let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
 
   let missingStudents = []; // [{id, nachname, vorname, klasse}] – Schild-Schüler ohne Forms-Zuordnung
 
@@ -172,10 +172,14 @@
       let klassenHinweis = "";
       try {
         schildKlassen = await SvwsApi.getKlassen(abschnittId);
-        klassenKuerzelById = new Map(schildKlassen.map((k) => [k.id, k.kuerzel || k.beschreibung || "–"]));
+        schuelerIdToKlasse = new Map();
+        for (const klasse of schildKlassen) {
+          const kuerzel = klasse.kuerzel || klasse.beschreibung || "–";
+          for (const s of klasse.schueler || []) schuelerIdToKlasse.set(s.id, kuerzel);
+        }
       } catch (klassenErr) {
         schildKlassen = [];
-        klassenKuerzelById = new Map();
+        schuelerIdToKlasse = new Map();
         klassenHinweis = " Klassen konnten nicht geladen werden (Klassen-Spalte bei „Schüler ohne Forms-Abgabe“ bleibt leer).";
         console.warn("Klassen konnten nicht geladen werden:", klassenErr);
       }
@@ -494,7 +498,7 @@
         id: s.id,
         nachname: s.nachname,
         vorname: s.vorname,
-        klasse: klassenKuerzelById.get(s.idKlasse) || "–",
+        klasse: schuelerIdToKlasse.get(s.id) || "–",
       }))
       .sort((a, b) => a.nachname.localeCompare(b.nachname, "de") || a.vorname.localeCompare(b.vorname, "de"));
 

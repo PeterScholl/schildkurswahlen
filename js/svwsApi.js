@@ -99,8 +99,12 @@
     return request("GET", "/faecher");
   }
 
+  /** Liefert KlassenDaten inkl. eingebettetem `schueler[]`-Array je Klasse (Kürzel + Mitglieder).
+   *  Bewusst `/details/` statt `/minimal/` verwendet: Auf mindestens einer SVWS-Server-Instanz
+   *  antwortet die CORS-Preflight-Anfrage für `/klassen/minimal/abschnitt/{id}` mit einem
+   *  Server-Fehler (500) - der details-Endpunkt funktioniert dort einwandfrei. */
   async function getKlassen(abschnittId) {
-    return request("GET", `/klassen/minimal/abschnitt/${abschnittId}`);
+    return request("GET", `/klassen/details/abschnitt/${abschnittId}`);
   }
 
   async function getLernabschnittsdaten(schuelerId, abschnittId) {
