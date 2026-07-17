@@ -134,8 +134,13 @@
    * nicht angetastet. Neue Einträge werden nur bei Score >= threshold automatisch
    * übernommen (manual: false); alle anderen bleiben unbeantwortet und werden in
    * der Rückgabe als `review` mit Kandidatenliste aufgeführt.
+   * @param searchTextFn optionale Funktion, die aus einer `query` den für die Ähnlichkeitssuche
+   *   verwendeten Text ableitet (Default: `query` unverändert). Der Speicherschlüssel in `table`
+   *   basiert immer auf der ursprünglichen `query`, nicht auf dem abgeleiteten Suchtext - so lässt
+   *   sich z.B. ein Präfix nur aus der Suche, nicht aber aus der Tabellen-Identität ausklammern.
    */
-  function autoMatch(queries, candidates, variantsFn, labelFn, table, threshold = DEFAULT_AUTO_THRESHOLD) {
+  function autoMatch(queries, candidates, variantsFn, labelFn, table, threshold = DEFAULT_AUTO_THRESHOLD, searchTextFn) {
+    const toSearchText = searchTextFn || ((q) => q);
     const result = { matched: 0, review: [] };
     const seen = new Set();
     for (const query of queries) {
@@ -143,7 +148,7 @@
       if (seen.has(normKey)) continue;
       seen.add(normKey);
       if (table[normKey]) continue; // bereits gematcht oder ignoriert -> unverändert lassen
-      const suggestions = suggestMatches(query, candidates, variantsFn, 5);
+      const suggestions = suggestMatches(toSearchText(query), candidates, variantsFn, 5);
       const best = suggestions[0];
       if (best && best.score >= threshold) {
         table[normKey] = {
@@ -171,10 +176,11 @@
     return autoMatch(formsNames, schuelerListe, variantsFn, labelFn || variantsFn, table, threshold);
   }
 
-  function autoMatchCourses(courseTexts, kursListe, table, threshold, labelFn) {
+  /** @param searchTextFn siehe `autoMatch()` - z.B. um ein Spalten-Kürzel vor der Suche zu entfernen. */
+  function autoMatchCourses(courseTexts, kursListe, table, threshold, labelFn, searchTextFn) {
     const variantsFn = (k) => [k.kuerzel, k.bezeichnungZeugnis];
     const defaultLabelFn = (k) => `${k.kuerzel || ""} ${k.bezeichnungZeugnis || ""}`.trim();
-    return autoMatch(courseTexts, kursListe, variantsFn, labelFn || defaultLabelFn, table, threshold);
+    return autoMatch(courseTexts, kursListe, variantsFn, labelFn || defaultLabelFn, table, threshold, searchTextFn);
   }
 
   global.Matching = {

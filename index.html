@@ -66,16 +66,30 @@
     <div class="mapping-columns">
       <div>
         <h4>Namensspalte</h4>
-        <div id="forms-name-col-container" class="checkbox-row"></div>
+        <div id="forms-name-col-container" class="column-picker-list"></div>
       </div>
       <div>
         <h4>Kurswahl-Spalten</h4>
-        <div id="forms-course-cols-container" class="checkbox-row"></div>
+        <div id="forms-course-cols-container" class="column-picker-list"></div>
       </div>
     </div>
     <button id="btn-apply-mapping">Auswahl übernehmen</button>
     <span id="forms-mapping-status" class="status-msg"></span>
   </div>
+</section>
+
+<section id="section-column-prefixes" class="card hidden">
+  <h2>3a. Spaltenkürzel für Kurswahl-Spalten</h2>
+  <p class="hint">
+    Jeder Kurswahl-Spalte kann ein Kürzel vorangestellt werden, das beim Matching dem gewählten
+    Kurstext vorangestellt wird (Standard: S&lt;Spaltennummer&gt;). So lässt sich z.B. "Rudern" aus
+    Spalte 7 einem anderen Schild-Kurs zuordnen als "Rudern" aus Spalte 9. Kürzel-Feld leeren, um keinen
+    Präfix zu verwenden; dasselbe Kürzel für mehrere Spalten vergeben, um sie beim Matching
+    zusammenzufassen.
+  </p>
+  <div id="column-prefix-container" class="column-prefix-list"></div>
+  <button id="btn-apply-column-prefixes">Kürzel übernehmen</button>
+  <span id="column-prefix-status" class="status-msg"></span>
 </section>
 
 <section id="section-student-matching" class="card hidden">

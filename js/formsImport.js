@@ -52,13 +52,22 @@
     return { nameCol: nameCol >= 0 ? nameCol : null, courseCols };
   }
 
+  /** Standard-Kürzel für eine Kurswahl-Spalte, falls noch kein eigenes vergeben wurde. */
+  function defaultColumnPrefix(colIdx) {
+    return `S${colIdx + 1}`;
+  }
+
   /**
    * Extrahiert pro Zeile den Namen und die Menge der nicht-leeren Kurswahl-Spaltenwerte.
+   * Ist für eine Spalte ein Kürzel in `mapping.columnPrefixes` hinterlegt (Schlüssel = Spaltenindex
+   * als String), wird es dem Zellwert vorangestellt - so lässt sich z.B. "Rudern" aus Spalte 7 beim
+   * Matching von "Rudern" aus Spalte 9 unterscheiden (unterschiedliche Kürzel) oder bewusst
+   * zusammenfassen (gleiches Kürzel). Ein leeres Kürzel lässt den Wert unverändert.
    * @returns {{formsName: string, courses: string[], rowIndex: number}[]}
    */
   function extractSelections(parsed, mapping) {
     const { rows } = parsed;
-    const { nameCol, courseCols } = mapping;
+    const { nameCol, courseCols, columnPrefixes = {} } = mapping;
     return rows.map((row, rowIndex) => {
       const formsName = nameCol != null ? String(row[nameCol] ?? "").trim() : "";
       const seen = new Set();
@@ -66,9 +75,11 @@
       for (const colIdx of courseCols) {
         const value = String(row[colIdx] ?? "").trim();
         if (value === "") continue;
-        if (seen.has(value)) continue;
-        seen.add(value);
-        courses.push(value);
+        const prefix = (columnPrefixes[String(colIdx)] ?? "").trim();
+        const finalValue = prefix ? `${prefix} ${value}` : value;
+        if (seen.has(finalValue)) continue;
+        seen.add(finalValue);
+        courses.push(finalValue);
       }
       return { formsName, courses, rowIndex };
     });
@@ -80,11 +91,29 @@
     return Array.from(set).sort((a, b) => a.localeCompare(b, "de"));
   }
 
+  /**
+   * Entfernt ein bekanntes Spalten-Kürzel (siehe Schritt 3a) samt trennendem Leerzeichen vom Anfang
+   * eines Kurswahl-Textes, sofern vorhanden. Wird für die Ähnlichkeitssuche gegen Schild-Kurse in
+   * Schritt 5 gebraucht: das Kürzel dient nur zur Unterscheidung gleichlautender Texte aus
+   * verschiedenen Spalten und hat mit der eigentlichen Kursbezeichnung nichts zu tun - es würde die
+   * Matching-Ähnlichkeit sonst künstlich verschlechtern. Als Speicherschlüssel in der Matching-Tabelle
+   * bleibt weiterhin der volle (mit Kürzel versehene) Text in Verwendung.
+   */
+  function stripKnownPrefix(text, columnPrefixes) {
+    for (const prefix of Object.values(columnPrefixes || {})) {
+      const p = String(prefix ?? "").trim();
+      if (p && text.startsWith(`${p} `)) return text.slice(p.length + 1);
+    }
+    return text;
+  }
+
   global.FormsImport = {
     parseWorkbook,
     suggestColumnMapping,
     extractSelections,
     distinctCourseTexts,
+    defaultColumnPrefix,
+    stripKnownPrefix,
     METADATA_HEADERS,
   };
 })(window);
