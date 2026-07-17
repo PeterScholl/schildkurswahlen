@@ -136,21 +136,6 @@ vorherige Schritt erledigt ist.
    markierten Leistungsdaten-Einträge dauerhaft aus Schild entfernen. Weitere Kontrollen lassen sich über
    `js/check.js` ergänzen.
 
-   **"Kurse ohne Forms-Wahl"**: vergleicht für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen
-   Schild-Kurse mit ihren gematchten Forms-Kurswahlen aus Schritt 5 und findet Leistungsdaten-Einträge zu
-   Kursen, die laut Forms nicht (mehr) gewählt wurden – z.B. Reste einer alten AG-Wahl. Setzt einen
-   abgeschlossenen Forms-Abgleich voraus (Schritte 3–5); ohne das erscheint eine Fehlermeldung statt
-   Ergebnissen. Da reguläre Fachkurse (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage zu tun haben
-   und sonst immer als "nicht gewählt" auftauchen würden, **muss** der Vergleich zunächst auf mindestens
-   ein Fach und eine Kursart eingegrenzt werden (Checkboxen, vorbelegt mit allen Fächern/Kursarten, die
-   tatsächlich in geladenen Kursen vorkommen – nicht der komplette Schild-Fächerkatalog). Die
-   Ergebnistabelle unterstützt:
-   - **Sortierbare Spalten** (Schüler, Fach, Kursart, Kurs, Leistungsdaten-ID) – Klick auf die
-     Spaltenüberschrift, wie bei "Schüler ohne Forms-Abgabe" in Schritt 4a.
-   - **Ein Suchfeld**, das live über Schüler-, Fach-, Kursart- und Kurstext filtert.
-   - **Löschen einzeln** (Button je Zeile) oder **über Checkboxen mehrere auf einmal** (alle standardmäßig
-     ausgewählt).
-
    **"Split in Jahrgangskurse"**: verschiebt Schüler:innen eines Jahrgangs aus einem gemeinsam angelegten
    Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
    jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
@@ -182,6 +167,26 @@ vorherige Schritt erledigt ist.
    `state.splitKlasseRows`). Ein Unterschied: Kurse kennen in Schild keine direkte Klassen-Zuordnung
    (nur `idJahrgaenge`), daher wird beim Anlegen eines Zielkurses über "+ Kurs" als Jahrgangs-Vorschlag
    der Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer.
+
+   **"Kurse ohne Forms-Wahl"** (bewusst *nach* den beiden Split-Bereichen platziert, siehe unten): vergleicht
+   für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen Schild-Kurse mit ihren gematchten
+   Forms-Kurswahlen aus Schritt 5 und findet Leistungsdaten-Einträge zu Kursen, die laut Forms nicht (mehr)
+   gewählt wurden – z.B. Reste einer alten AG-Wahl. Setzt einen abgeschlossenen Forms-Abgleich voraus
+   (Schritte 3–5); ohne das erscheint eine Fehlermeldung statt Ergebnissen. **Berücksichtigt dabei auch die
+   oben konfigurierten Splits**: Liegt ein aktueller Kurs auf einem Zielkurs eines Jahrgangs- oder
+   Klassen-Splits (auch mehrstufig, z.B. erst Jahrgangs- dann Klassen-Split), gilt rückwirkend der
+   ursprüngliche Quellkurs als gewählt – ein frisch gesplitteter Kurs wird also nicht fälschlich als
+   "nicht gewählt" gemeldet, nur weil er selbst nie Teil einer Forms-Kurswahl war (genau deshalb steht
+   dieser Abschnitt hinter den Split-Bereichen: er liest deren Konfiguration mit). Da reguläre Fachkurse
+   (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage zu tun haben und sonst immer als "nicht gewählt"
+   auftauchen würden, **muss** der Vergleich zunächst auf mindestens ein Fach und eine Kursart eingegrenzt
+   werden (Checkboxen, vorbelegt mit allen Fächern/Kursarten, die tatsächlich in geladenen Kursen vorkommen
+   – nicht der komplette Schild-Fächerkatalog). Die Ergebnistabelle unterstützt:
+   - **Sortierbare Spalten** (Schüler, Fach, Kursart, Kurs, Leistungsdaten-ID) – Klick auf die
+     Spaltenüberschrift, wie bei "Schüler ohne Forms-Abgabe" in Schritt 4a.
+   - **Ein Suchfeld**, das live über Schüler-, Fach-, Kursart- und Kurstext filtert.
+   - **Löschen einzeln** (Button je Zeile) oder **über Checkboxen mehrere auf einmal** (alle standardmäßig
+     ausgewählt).
 
 ## Wichtige Entscheidungen
 
@@ -506,23 +511,6 @@ Funktionen rund um Schritt 8 (Nachbereitung):
   Wird von `onExecuteTransfer()`, `onDeleteCheckLeererKurs()`, `onExecuteSplitJahrgang()`,
   `onExecuteSplitKlasse()` und `deleteKurseOhneWahlIds()` genutzt.
 
-Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8):
-
-- `populateKurseOhneWahlFilters()`: befüllt die Fach-/Kursart-Checkboxen aus den tatsächlich in
-  `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Wird nach jedem "Schild-Daten laden"
-  neu aufgerufen.
-- `onRunKurseOhneWahl()`: baut zunächst pro Schritt-4-Match die Menge `chosenKursIds` (alle
-  nicht-ignorierten Kurs-Treffer aus `state.kursMatching` für die Kurswahlen dieser Person), holt dann
-  konkurrenzbegrenzt die Lernabschnittsdaten und meldet Leistungsdaten-Einträge mit `kursID`, die (a)
-  durch den Fach-/Kursart-Filter kommen und (b) nicht in `chosenKursIds` enthalten sind.
-- `renderKurseOhneWahlTable()`: wendet Suchfilter (`#kurse-ohne-wahl-suche`, Substring über alle
-  Anzeigespalten) und Sortierung (`compareKurseOhneWahl()`, gleiches Sortier-Muster wie
-  `compareMissingStudents()` in Schritt 4a) auf `kurseOhneWahlResults` an, bevor gerendert wird - beides
-  rein clientseitig auf dem bereits geladenen Ergebnis, keine erneuten Server-Anfragen.
-- `deleteKurseOhneWahlIds(ids)`: gemeinsame Löschroutine für sowohl den Einzel-Löschen-Button je Zeile
-  (`onDeleteKurseOhneWahlSingle()`) als auch das Mehrfach-Löschen über Checkboxen
-  (`onDeleteKurseOhneWahlSelected()`), beide mit `confirm()`-Sicherheitsabfrage.
-
 Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
 
 - `renderSplitJahrgangTable()` / `onSplitJahrgangAddRow()` / `onSplitJahrgangAddBelow()` /
@@ -554,14 +542,39 @@ Zielkurs-Anlage-Vorbelegung über `klasse.idJahrgang`), dass eine Abstraktion me
 gebracht hätte. Echte Querschnittslogik (`batchWithBisection()`, `buildSplitLeistungsdatenPayload()`,
 `openCreateKursDialog()`) bleibt geteilt.
 
+Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8, bewusst *nach* den beiden Split-Blöcken im Code
+platziert, da sie deren Konfiguration liest):
+
+- `populateKurseOhneWahlFilters()`: befüllt die Fach-/Kursart-Checkboxen aus den tatsächlich in
+  `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Wird nach jedem "Schild-Daten laden"
+  neu aufgerufen.
+- `buildSplitZielZuQuellMap()`: baut aus den vollständigen Zeilen *beider* Split-Bereiche
+  (`state.splitJahrgangRows` + `state.splitKlasseRows`) eine Zielkurs-ID → Quellkurs-ID-Abbildung.
+- `resolveUrsprungsKurs(kursId, zielZuQuell)`: verfolgt einen Kurs rückwärts über ggf. mehrere
+  Split-Schritte (Jahrgangs- *und* Klassen-Split können hintereinander angewendet worden sein) bis zum
+  ursprünglichen, nicht selbst aus einem Split hervorgegangenen Kurs zurück, mit Zyklus-Schutz für
+  widersprüchliche Konfigurationen (isoliert getestet: mehrstufige Ketten, unbekannte IDs, Zyklen).
+- `onRunKurseOhneWahl()`: baut zunächst pro Schritt-4-Match die Menge `chosenKursIds` (alle
+  nicht-ignorierten Kurs-Treffer aus `state.kursMatching` für die Kurswahlen dieser Person), holt dann
+  konkurrenzbegrenzt die Lernabschnittsdaten und meldet Leistungsdaten-Einträge mit `kursID`, die (a)
+  durch den Fach-/Kursart-Filter kommen und (b) weder direkt noch über `resolveUrsprungsKurs()` in
+  `chosenKursIds` enthalten sind.
+- `renderKurseOhneWahlTable()`: wendet Suchfilter (`#kurse-ohne-wahl-suche`, Substring über alle
+  Anzeigespalten) und Sortierung (`compareKurseOhneWahl()`, gleiches Sortier-Muster wie
+  `compareMissingStudents()` in Schritt 4a) auf `kurseOhneWahlResults` an, bevor gerendert wird - beides
+  rein clientseitig auf dem bereits geladenen Ergebnis, keine erneuten Server-Anfragen.
+- `deleteKurseOhneWahlIds(ids)`: gemeinsame Löschroutine für sowohl den Einzel-Löschen-Button je Zeile
+  (`onDeleteKurseOhneWahlSingle()`) als auch das Mehrfach-Löschen über Checkboxen
+  (`onDeleteKurseOhneWahlSelected()`), beide mit `confirm()`-Sicherheitsabfrage.
+
 ## Bekannte Grenzen / mögliche Erweiterungen
 
 - Mehrfach-Einreichungen derselben Person in der Forms-Datei werden anhand der Zeilenreihenfolge
   aufgelöst (die letzte Zeile mit demselben Namen gewinnt) – es gibt keinen Abgleich über die
   Forms-interne Antwort-ID hinaus.
-- Es werden ausschließlich neue Leistungsdaten angelegt; ein Abgleich, der auch anzeigt, welche
-  *vorhandenen* Schild-Kurse laut Forms nicht mehr gewählt sind (zum manuellen Entfernen), ist aktuell
-  nicht enthalten.
+- Schritt 6 legt ausschließlich neue Leistungsdaten an. Der Abgleich, welche *vorhandenen* Schild-Kurse
+  laut Forms nicht mehr gewählt sind, existiert inzwischen als eigener Bereich "Kurse ohne Forms-Wahl" in
+  Schritt 8 (inkl. Löschmöglichkeit) - Schritt 6 selbst löscht aber weiterhin nichts automatisch.
 - Kein automatisierter Test-Runner; die Kernlogik (`formsImport.js`, `matching.js`) wurde während der
   Entwicklung über Node-Skripte gegen die echte Beispieldatei sowie synthetische Schild-Daten geprüft.
 - "Split in Jahrgangskurse" und "Split in Klassenkurse" arbeiten mit dem Datenstand aus dem letzten
