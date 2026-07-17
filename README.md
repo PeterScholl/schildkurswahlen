@@ -162,8 +162,11 @@ vorherige Schritt erledigt ist.
      Quellkurs-Eintrag *nicht* gelöscht – so kann niemand eine Fachbelegung komplett verlieren, nur weil
      ein einzelner Schreibvorgang scheitert (isoliert getestet, siehe "Fehlerbehebungen" unten).
 
-   *"Split in Klassenkurse" (analog, aber nach Klasse statt Jahrgang gruppiert) ist als nächster Schritt
-   geplant, sobald sich die Jahrgangs-Variante im Einsatz bewährt hat.*
+   **"Split in Klassenkurse"**: direkt darunter, strukturell identisch zu "Split in Jahrgangskurse", aber
+   nach Klasse statt Jahrgang gruppiert (eigene Tabelle mit "+ Klasse" statt "+ Jahrgang", eigenes
+   `state.splitKlasseRows`). Ein Unterschied: Kurse kennen in Schild keine direkte Klassen-Zuordnung
+   (nur `idJahrgaenge`), daher wird beim Anlegen eines Zielkurses über "+ Kurs" als Jahrgangs-Vorschlag
+   der Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer.
 
 ## Wichtige Entscheidungen
 
@@ -501,11 +504,22 @@ Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
 - `buildSplitLeistungsdatenPayload(quellEintrag, zielkurs)`: baut den Leistungsdaten-Payload für den
   Zielkurs - Noten-/Zeugnisfelder vom Quelleintrag, Kursart/Wochenstunden/Kursleitung vom Zielkurs.
 - `onExecuteSplitJahrgang()`: verarbeitet alle vollständigen Zeilen sequenziell. Pro Zeile: Kandidaten
-  über `schuelerById.get(s.id).idJahrgang` filtern, Lernabschnittsdaten konkurrenzbegrenzt laden, für
-  jede Person Anlegen-im-Ziel (falls nötig) und Löschen-aus-Quelle über `batchWithBisection()` ausführen.
-  Wichtig: Die zum Löschen vorgesehene Menge wird aus den *erfolgreichen* Anlege-Operationen abgeleitet
-  (`fehlgeschlageneOps`-Set über Objektreferenzen aus `createResult.failed`), damit ein fehlgeschlagenes
-  Anlegen niemals zu einem gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
+  über `schuelerById.get(s.id).idJahrgang` filtern (getrennt gezählt von Schüler:innen, die in
+  `schuelerById` gar nicht auftauchen, weil sie nicht im Status-Filter aus Schritt 2 enthalten sind - nur
+  Letzteres landet als Hinweis im Protokoll, "andere Jahrgänge im selben Quellkurs" ist normal und wird
+  nicht gemeldet), Lernabschnittsdaten konkurrenzbegrenzt laden, für jede Person Anlegen-im-Ziel (falls
+  nötig) und Löschen-aus-Quelle über `batchWithBisection()` ausführen. Wichtig: Die zum Löschen
+  vorgesehene Menge wird aus den *erfolgreichen* Anlege-Operationen abgeleitet (`fehlgeschlageneOps`-Set
+  über Objektreferenzen aus `createResult.failed`), damit ein fehlgeschlagenes Anlegen niemals zu einem
+  gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
+
+"Split in Klassenkurse" (`renderSplitKlasseTable()`, `onSplitKlasse*()`, `onExecuteSplitKlasse()`,
+`state.splitKlasseRows`) ist bewusst ein separater, struktureller Zwilling der obigen Funktionen statt
+einer gemeinsamen generischen Engine - die beiden Dimensionen unterscheiden sich genug (Schülerfeld
+`idKlasse` vs. `idJahrgang`; Kurse kennen nur Jahrgänge, keine Klassen, daher andere
+Zielkurs-Anlage-Vorbelegung über `klasse.idJahrgang`), dass eine Abstraktion mehr Indirektion als Nutzen
+gebracht hätte. Echte Querschnittslogik (`batchWithBisection()`, `buildSplitLeistungsdatenPayload()`,
+`openCreateKursDialog()`) bleibt geteilt.
 
 ## Bekannte Grenzen / mögliche Erweiterungen
 
@@ -517,10 +531,8 @@ Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
   nicht enthalten.
 - Kein automatisierter Test-Runner; die Kernlogik (`formsImport.js`, `matching.js`) wurde während der
   Entwicklung über Node-Skripte gegen die echte Beispieldatei sowie synthetische Schild-Daten geprüft.
-- "Split in Klassenkurse" (analog zu "Split in Jahrgangskurse", aber nach Klasse statt Jahrgang gruppiert)
-  ist noch nicht umgesetzt, bewusst als nächster Schritt zurückgestellt.
-- "Split in Jahrgangskurse" arbeitet mit dem Datenstand aus dem letzten "Schild-Daten laden" (Schritt 2);
-  wer mehrere Split-Durchläufe hintereinander macht, sollte zwischendurch neu laden, damit Schülerzahlen
-  in den Datalist-Vorschlägen aktuell bleiben (die eigentliche Verschiebe-Logik selbst holt pro Zeile
-  frische Lernabschnittsdaten und ist dadurch auch ohne Neuladen korrekt, nur die angezeigten Zahlen in
-  Klammern könnten veraltet sein).
+- "Split in Jahrgangskurse" und "Split in Klassenkurse" arbeiten mit dem Datenstand aus dem letzten
+  "Schild-Daten laden" (Schritt 2); wer mehrere Split-Durchläufe hintereinander macht, sollte
+  zwischendurch neu laden, damit Schülerzahlen in den Datalist-Vorschlägen aktuell bleiben (die
+  eigentliche Verschiebe-Logik selbst holt pro Zeile frische Lernabschnittsdaten und ist dadurch auch ohne
+  Neuladen korrekt, nur die angezeigten Zahlen in Klammern könnten veraltet sein).

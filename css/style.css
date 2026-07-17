@@ -301,10 +301,10 @@ dialog#create-kurs-dialog .grid-form { grid-template-columns: 1fr; }
 .progress-bar::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
 .progress-bar::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
-#split-jahrgang-table input,
-#split-jahrgang-table select { min-width: 220px; }
-#split-jahrgang-table .row-actions { display: flex; gap: 0.35rem; white-space: nowrap; }
-#split-jahrgang-table .row-actions button {
+.split-table input,
+.split-table select { min-width: 220px; }
+.split-table .row-actions { display: flex; gap: 0.35rem; white-space: nowrap; }
+.split-table .row-actions button {
   padding: 0.2rem 0.5rem;
   font-size: 0.8rem;
   margin-right: 0;

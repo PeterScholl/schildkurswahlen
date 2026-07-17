@@ -19,6 +19,7 @@
       columnPrefixes: {}, // Spaltenindex (als String) -> Kürzel, das dem Kurstext vorangestellt wird
       courseSplitDelimiter: "", // Trennzeichen für Kurs-Rewrite (Schritt 3a); leer = kein Split
       splitJahrgangRows: [], // [{quellkursId, jahrgangId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
+      splitKlasseRows: [], // [{quellkursId, klasseId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
       schuelerMatching: {},
       kursMatching: {},
       leistungsdatenDefaults: {

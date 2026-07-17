@@ -250,6 +250,7 @@
       buildDatalists();
       populateCreateKursDialogOptions();
       renderSplitJahrgangTable();
+      renderSplitKlasseTable();
     } catch (err) {
       setStatus(statusEl, err.message, "error");
     }
@@ -1589,14 +1590,21 @@
         continue;
       }
 
-      const kandidaten = (quellkurs.schueler || []).filter((s) => {
+      // Getrennt zählen: "anderer Jahrgang" ist normal (Quellkurs ist ja noch ungesplittet), nur
+      // "in schuelerById nicht auflösbar" (Status-Filter aus Schritt 2) ist eine echte Einschränkung.
+      const kandidaten = [];
+      let nichtImStatusFilter = 0;
+      for (const s of quellkurs.schueler || []) {
         const voll = schuelerById.get(s.id);
-        return voll && voll.idJahrgang === jahrgang.id;
-      });
-      const ausserhalbFilter = (quellkurs.schueler || []).length - kandidaten.length;
+        if (!voll) {
+          nichtImStatusFilter++;
+          continue;
+        }
+        if (voll.idJahrgang === jahrgang.id) kandidaten.push(s);
+      }
       if (kandidaten.length === 0) {
         log.textContent += `  Keine passenden Schüler:innen im Quellkurs gefunden${
-          ausserhalbFilter ? ` (${ausserhalbFilter} Schüler:innen im Kurs sind nicht im aktuell geladenen Status-Filter enthalten)` : ""
+          nichtImStatusFilter ? ` (${nichtImStatusFilter} Schüler:innen im Kurs sind nicht im aktuell geladenen Status-Filter enthalten)` : ""
         }.\n`;
         continue;
       }
@@ -1668,6 +1676,252 @@
     );
   }
 
+  // ---------- 8c. Split in Klassenkurse ----------
+  // Strukturell identisch zu "Split in Jahrgangskurse" oben, nur nach Klasse statt Jahrgang gruppiert.
+  // Bewusst als eigener, paralleler Funktionsblock gehalten statt generalisiert: die beiden
+  // Dimensionen unterscheiden sich an mehreren Stellen genug (Schuelerfeld idKlasse vs. idJahrgang,
+  // Kurse kennen nur Jahrgänge - keine Klassen, daher andere Zielkurs-Anlege-Vorbelegung), dass eine
+  // gemeinsame Engine mehr Indirektion als Nutzen gebracht hätte.
+
+  function klasseOptionsHtml(selectedId) {
+    const optionen = ['<option value="">(wählen)</option>'].concat(
+      schildKlassen.map((k) => {
+        const label = k.kuerzel || k.beschreibung || `#${k.id}`;
+        return `<option value="${k.id}" ${k.id === selectedId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      })
+    );
+    return optionen.join("");
+  }
+
+  function renderSplitKlasseTable() {
+    const tbody = document.querySelector("#split-klasse-table tbody");
+    tbody.innerHTML = state.splitKlasseRows
+      .map((row, idx) => {
+        const quellkurs = row.quellkursId != null ? kursById.get(row.quellkursId) : null;
+        const zielkurs = row.zielkursId != null ? kursById.get(row.zielkursId) : null;
+        return `
+        <tr data-row-idx="${idx}">
+          <td><input type="text" class="split-klasse-quellkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(quellkurs ? kursLabelMitAnzahl(quellkurs) : "")}" placeholder="Kurs wählen" /></td>
+          <td><select class="split-klasse-klasse-select">${klasseOptionsHtml(row.klasseId)}</select></td>
+          <td>
+            <input type="text" class="split-klasse-zielkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(zielkurs ? kursLabelMitAnzahl(zielkurs) : "")}" placeholder="vorhandenen Kurs wählen" />
+            <button type="button" class="btn-secondary split-klasse-zielkurs-create" title="Neuen Kurs für diese Zeile anlegen">+ Kurs</button>
+          </td>
+          <td class="row-actions">
+            <button type="button" class="btn-secondary split-klasse-add-below">+ Klasse</button>
+            <button type="button" class="btn-secondary split-klasse-remove-row">✕</button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function splitKlasseRowIndex(evt) {
+    return Number(evt.target.closest("tr").dataset.rowIdx);
+  }
+
+  function onSplitKlasseQuellkursChange(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    const id = idFromLabel(evt.target.value.trim());
+    state.splitKlasseRows[idx].quellkursId = id != null && kursById.has(id) ? id : null;
+    persist();
+    renderSplitKlasseTable();
+  }
+
+  function onSplitKlasseKlasseChange(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    state.splitKlasseRows[idx].klasseId = evt.target.value ? Number(evt.target.value) : null;
+    persist();
+  }
+
+  function onSplitKlasseZielkursChange(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    const id = idFromLabel(evt.target.value.trim());
+    state.splitKlasseRows[idx].zielkursId = id != null && kursById.has(id) ? id : null;
+    persist();
+    renderSplitKlasseTable();
+  }
+
+  function onSplitKlasseAddRow() {
+    state.splitKlasseRows.push({ quellkursId: null, klasseId: null, zielkursId: null });
+    persist();
+    renderSplitKlasseTable();
+  }
+
+  function onSplitKlasseAddBelow(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    const quelle = state.splitKlasseRows[idx];
+    state.splitKlasseRows.splice(idx + 1, 0, { quellkursId: quelle.quellkursId, klasseId: null, zielkursId: null });
+    persist();
+    renderSplitKlasseTable();
+  }
+
+  function onSplitKlasseRemoveRow(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    state.splitKlasseRows.splice(idx, 1);
+    persist();
+    renderSplitKlasseTable();
+  }
+
+  /** "+ Kurs" im Zielkurs-Feld einer Klassen-Split-Zeile. Kurse kennen in Schild keine direkte
+   *  Klassen-Zuordnung (nur `idJahrgaenge`), daher wird als Jahrgangs-Vorschlag der Jahrgang der
+   *  gewählten Klasse vorausgewählt (`klasse.idJahrgang`) - änderbar wie immer. */
+  function onSplitKlasseCreateZielkurs(evt) {
+    const idx = splitKlasseRowIndex(evt);
+    const row = state.splitKlasseRows[idx];
+    const quellkurs = row.quellkursId != null ? kursById.get(row.quellkursId) : null;
+    const klasse = row.klasseId != null ? schildKlassen.find((k) => k.id === row.klasseId) : null;
+    const klasseLabel = klasse ? klasse.kuerzel || klasse.beschreibung || "" : "";
+    const kuerzelSuggestion = quellkurs ? [quellkurs.kuerzel, klasseLabel].filter(Boolean).join("-") : "";
+
+    openCreateKursDialog({
+      displayText: quellkurs ? `Split-Zeile: ${quellkurs.kuerzel} → ${klasseLabel || "?"}` : "Split-Zeile",
+      kuerzelSuggestion,
+      bezeichnungSuggestion: quellkurs ? quellkurs.bezeichnungZeugnis || kuerzelSuggestion : "",
+      fachId: quellkurs ? quellkurs.idFach : null,
+      kursart: quellkurs ? quellkurs.kursartAllg : "",
+      wochenstunden: quellkurs ? quellkurs.wochenstunden : 2,
+      jahrgangIds: klasse && klasse.idJahrgang != null ? [klasse.idJahrgang] : null,
+      onCreated: (neuerKurs) => {
+        row.zielkursId = neuerKurs.id;
+        persist();
+        renderSplitKlasseTable();
+        setStatus($("split-klasse-status"), `Kurs "${neuerKurs.kuerzel}" angelegt und als Zielkurs eingetragen.`, "ok");
+      },
+    });
+  }
+
+  async function onExecuteSplitKlasse() {
+    const log = $("split-klasse-log");
+    const statusEl = $("split-klasse-status");
+    const progressEl = $("split-klasse-progress");
+    log.textContent = "";
+
+    const rows = state.splitKlasseRows.filter((r) => r.quellkursId != null && r.klasseId != null && r.zielkursId != null);
+    if (rows.length === 0) {
+      setStatus(statusEl, "Keine vollständig ausgefüllten Zeilen (Quellkurs, Klasse und Zielkurs nötig).", "error");
+      return;
+    }
+
+    $("btn-split-klasse-execute").disabled = true;
+    progressEl.classList.remove("hidden");
+    progressEl.max = rows.length;
+    progressEl.value = 0;
+
+    let gesamtVerschoben = 0;
+    let gesamtFehler = 0;
+    let zeilenNr = 0;
+
+    for (const row of rows) {
+      zeilenNr++;
+      progressEl.value = zeilenNr;
+      const quellkurs = kursById.get(row.quellkursId);
+      const klasse = schildKlassen.find((k) => k.id === row.klasseId);
+      if (!quellkurs || !klasse) {
+        log.textContent += `Zeile ${zeilenNr}: Quellkurs oder Klasse nicht mehr gültig, übersprungen.\n`;
+        gesamtFehler++;
+        continue;
+      }
+      const klasseLabel = klasse.kuerzel || klasse.beschreibung || `#${klasse.id}`;
+
+      setStatus(statusEl, `Zeile ${zeilenNr}/${rows.length}: ${quellkurs.kuerzel} → ${klasseLabel} …`, "");
+      log.textContent += `Zeile ${zeilenNr}: Quellkurs "${quellkurs.kuerzel}", Klasse "${klasseLabel}" …\n`;
+
+      const zielkurs = kursById.get(row.zielkursId);
+      if (!zielkurs) {
+        log.textContent += `  Zielkurs nicht mehr gültig, übersprungen.\n`;
+        gesamtFehler++;
+        continue;
+      }
+      if (zielkurs.id === quellkurs.id) {
+        log.textContent += `  Quellkurs und Zielkurs sind identisch, übersprungen.\n`;
+        continue;
+      }
+
+      // Getrennt zählen: "andere Klasse" ist normal (Quellkurs ist ja noch ungesplittet), nur
+      // "in schuelerById nicht auflösbar" (Status-Filter aus Schritt 2) ist eine echte Einschränkung.
+      const kandidaten = [];
+      let nichtImStatusFilter = 0;
+      for (const s of quellkurs.schueler || []) {
+        const voll = schuelerById.get(s.id);
+        if (!voll) {
+          nichtImStatusFilter++;
+          continue;
+        }
+        if (voll.idKlasse === klasse.id) kandidaten.push(s);
+      }
+      if (kandidaten.length === 0) {
+        log.textContent += `  Keine passenden Schüler:innen im Quellkurs gefunden${
+          nichtImStatusFilter ? ` (${nichtImStatusFilter} Schüler:innen im Kurs sind nicht im aktuell geladenen Status-Filter enthalten)` : ""
+        }.\n`;
+        continue;
+      }
+
+      const ladBySchueler = new Map();
+      await mapWithConcurrency(kandidaten, 6, async (s) => {
+        try {
+          ladBySchueler.set(s.id, await SvwsApi.getLernabschnittsdaten(s.id, abschnittId));
+        } catch (e) {
+          ladBySchueler.set(s.id, null);
+        }
+      });
+
+      const ops = [];
+      let ladFehler = 0;
+      for (const s of kandidaten) {
+        const lad = ladBySchueler.get(s.id);
+        if (!lad) {
+          ladFehler++;
+          continue;
+        }
+        const quellEintrag = (lad.leistungsdaten || []).find((l) => l.kursID === quellkurs.id);
+        if (!quellEintrag) continue;
+        const hatSchonZiel = (lad.leistungsdaten || []).some((l) => l.kursID === zielkurs.id);
+        ops.push({
+          schuelerLabel: schuelerLabel(s),
+          quellEintragId: quellEintrag.id,
+          createPayload: hatSchonZiel ? null : buildSplitLeistungsdatenPayload(quellEintrag, zielkurs),
+        });
+      }
+
+      const toCreate = ops.filter((op) => op.createPayload);
+      const createResult = await batchWithBisection(toCreate, (subset) =>
+        SvwsApi.createLeistungsdatenMultiple(subset.map((op) => op.createPayload))
+      );
+      const fehlgeschlageneOps = new Set(createResult.failed.map((f) => f.item));
+
+      const toDelete = ops.filter((op) => !op.createPayload || !fehlgeschlageneOps.has(op));
+      const deleteResult = await batchWithBisection(
+        toDelete.map((op) => op.quellEintragId),
+        (subset) => SvwsApi.deleteLeistungsdatenMultiple(subset)
+      );
+
+      gesamtVerschoben += deleteResult.ok;
+      const zeilenFehler = createResult.failed.length + deleteResult.failed.length + ladFehler;
+      gesamtFehler += zeilenFehler;
+
+      log.textContent +=
+        `  ${deleteResult.ok} Schüler:innen verschoben` +
+        (createResult.failed.length ? `, ${createResult.failed.length} Anlage-Fehler (Quelleintrag bewusst nicht gelöscht)` : "") +
+        (deleteResult.failed.length ? `, ${deleteResult.failed.length} Lösch-Fehler (jetzt evtl. doppelt vorhanden)` : "") +
+        (ladFehler ? `, ${ladFehler}x Lernabschnittsdaten nicht ladbar` : "") +
+        ".\n";
+      for (const f of createResult.failed) log.textContent += `    Anlegen fehlgeschlagen (${f.item.schuelerLabel}): ${f.message}\n`;
+      for (const f of deleteResult.failed) log.textContent += `    Löschen fehlgeschlagen (Leistungsdaten-ID ${f.item}): ${f.message}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    progressEl.classList.add("hidden");
+    persist();
+    renderSplitKlasseTable();
+    $("btn-split-klasse-execute").disabled = false;
+    setStatus(
+      statusEl,
+      `Fertig: ${gesamtVerschoben} Schüler:innen verschoben${gesamtFehler ? `, ${gesamtFehler} Fehler (siehe Protokoll)` : ""}.`,
+      gesamtFehler ? "warn" : "ok"
+    );
+  }
+
   // ---------- Initialisierung ----------
 
   function init() {
@@ -1721,6 +1975,20 @@
       else if (evt.target.classList.contains("split-zielkurs-create")) onSplitJahrgangCreateZielkurs(evt);
     });
     renderSplitJahrgangTable();
+
+    $("btn-split-klasse-add-row").addEventListener("click", onSplitKlasseAddRow);
+    $("btn-split-klasse-execute").addEventListener("click", onExecuteSplitKlasse);
+    document.querySelector("#split-klasse-table").addEventListener("change", (evt) => {
+      if (evt.target.classList.contains("split-klasse-quellkurs-input")) onSplitKlasseQuellkursChange(evt);
+      else if (evt.target.classList.contains("split-klasse-klasse-select")) onSplitKlasseKlasseChange(evt);
+      else if (evt.target.classList.contains("split-klasse-zielkurs-input")) onSplitKlasseZielkursChange(evt);
+    });
+    document.querySelector("#split-klasse-table").addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("split-klasse-add-below")) onSplitKlasseAddBelow(evt);
+      else if (evt.target.classList.contains("split-klasse-remove-row")) onSplitKlasseRemoveRow(evt);
+      else if (evt.target.classList.contains("split-klasse-zielkurs-create")) onSplitKlasseCreateZielkurs(evt);
+    });
+    renderSplitKlasseTable();
 
     document.querySelectorAll("#student-status-filter input").forEach((cb) => cb.addEventListener("change", applyStudentFilter));
     document.querySelectorAll("#course-status-filter input").forEach((cb) => cb.addEventListener("change", applyCourseFilter));
