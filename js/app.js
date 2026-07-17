@@ -17,6 +17,7 @@
   let schildFaecher = [];
   let schildKlassen = [];
   let schildKursarten = []; // Katalog gültiger Kursarten (für "Neuen Kurs anlegen"-Dialog)
+  let schildJahrgaenge = []; // Katalog aller Jahrgänge (für "Neuen Kurs anlegen"-Dialog)
   let schuelerById = new Map();
   let kursById = new Map();
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
@@ -199,6 +200,15 @@
         console.warn("Kursarten konnten nicht geladen werden:", kursartenErr);
       }
 
+      // Jahrgänge sind ebenfalls nur für den "Neuen Kurs anlegen"-Dialog nötig (Vorbelegung der
+      // Jahrgangs-Zuordnung neuer Kurse) - ein Fehler hier soll den Schritt nicht blockieren.
+      try {
+        schildJahrgaenge = await SvwsApi.getJahrgaenge();
+      } catch (jahrgaengeErr) {
+        schildJahrgaenge = [];
+        console.warn("Jahrgänge konnten nicht geladen werden:", jahrgaengeErr);
+      }
+
       $("schild-data-counts").textContent =
         `${schildSchueler.length} Schüler (gefiltert), ${schildKurse.length} Kurse, ${schildFaecher.length} Fächer, ${schildKlassen.length} Klassen geladen.`;
       setStatus(statusEl, "Fertig." + klassenHinweis, klassenHinweis ? "warn" : "ok");
@@ -226,6 +236,26 @@
     const kursartDatalist = $("kursart-datalist");
     kursartDatalist.innerHTML = Array.from(kursartOptions.entries())
       .map(([kuerzel, bezeichnung]) => `<option value="${escapeHtml(kuerzel)}">${escapeHtml(bezeichnung)}</option>`)
+      .join("");
+  }
+
+  /** Jahrgänge, die bei "Neuen Kurs anlegen" standardmäßig vorausgewählt werden (sofern in Schild
+   *  vorhanden) - deckt Sek I und Oberstufe gleichermaßen ab, damit ein neu angelegter AG-/Wahlkurs
+   *  nicht durch eine fehlende Jahrgangszuordnung von regulären Kursen abweicht. */
+  const DEFAULT_JAHRGANG_KUERZEL = new Set(["05", "06", "07", "08", "09", "10", "EF", "Q1", "Q2"]);
+
+  /** Baut die Jahrgangs-Checkboxen im "Neuen Kurs anlegen"-Dialog neu auf, inkl. Standard-Vorauswahl.
+   *  Wird bei jedem Öffnen des Dialogs aufgerufen, damit eine vorherige manuelle Auswahl nicht hängen
+   *  bleibt. */
+  function renderCreateKursJahrgaenge() {
+    const container = $("create-kurs-jahrgaenge-container");
+    container.innerHTML = schildJahrgaenge
+      .map((j) => {
+        const label = j.kuerzel || j.kuerzelStatistik || `#${j.id}`;
+        const vergleichsKuerzel = (j.kuerzel || j.kuerzelStatistik || "").trim().toUpperCase();
+        const checked = DEFAULT_JAHRGANG_KUERZEL.has(vergleichsKuerzel);
+        return `<label><input type="checkbox" class="create-kurs-jahrgang" value="${j.id}" ${checked ? "checked" : ""}/> ${escapeHtml(label)}</label>`;
+      })
       .join("");
   }
 
@@ -806,6 +836,7 @@
     $("create-kurs-kursart").value = "";
     $("create-kurs-wochenstunden").value = 2;
     $("create-kurs-sichtbar").checked = true;
+    renderCreateKursJahrgaenge();
     setStatus($("create-kurs-status"), "", "");
     $("create-kurs-dialog").showModal();
     $("create-kurs-kuerzel").focus();
@@ -826,6 +857,9 @@
     }
     const fachId = $("create-kurs-fach").value ? Number($("create-kurs-fach").value) : null;
     const bezeichnungZeugnis = $("create-kurs-bezeichnung").value.trim();
+    const idJahrgaenge = Array.from(document.querySelectorAll(".create-kurs-jahrgang:checked")).map((cb) =>
+      Number(cb.value)
+    );
 
     const payload = {
       idSchuljahresabschnitt: abschnittId,
@@ -835,7 +869,7 @@
       bezeichnungZeugnis: bezeichnungZeugnis || null,
       wochenstunden: Number($("create-kurs-wochenstunden").value) || 0,
       istSichtbar: $("create-kurs-sichtbar").checked,
-      idJahrgaenge: [],
+      idJahrgaenge,
       schienen: [],
     };
 

@@ -124,6 +124,10 @@
     return request("GET", "/kurse/allgemein/kursarten");
   }
 
+  async function getJahrgaenge() {
+    return request("GET", "/jahrgaenge");
+  }
+
   /** Erstellt einen neuen Kurs und gibt die von Schild vergebenen Daten (inkl. neuer ID) zurück. */
   async function createKurs(kursDaten) {
     return request("POST", "/kurse/create", kursDaten);
@@ -162,6 +166,7 @@
     getFaecher,
     getKlassen,
     getKursarten,
+    getJahrgaenge,
     createKurs,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,

@@ -90,14 +90,20 @@ vorherige Schritt erledigt ist.
      dem live von Schild geladenen Kursarten-Katalog; freie Texteingabe ist möglich, falls die gewünschte
      Kursart dort nicht auftaucht.
    - **Wochenstunden** (Default 2) und **Sichtbar in Schild** (Checkbox, Default an).
+   - **Jahrgänge** – Checkboxen aus den in Schild vorhandenen Jahrgängen (`GET /jahrgaenge`); vorausgewählt
+     sind, sofern in Schild vorhanden, 05–10 sowie EF, Q1, Q2 (`DEFAULT_JAHRGANG_KUERZEL` in `js/app.js`).
+     Grund: über die App angelegte Kurse hatten anfangs gar keine Jahrgangszuordnung (`idJahrgaenge: []`),
+     was sie sichtbar von regulär in Schild angelegten Kursen unterschied (z.B. in jahrgangsbezogenen
+     Ansichten/Auswertungen). Die Auswahl lässt sich vor dem Anlegen frei anpassen.
 
-   Fest auf leere Listen gesetzt werden `idJahrgaenge` und `schienen` (laut SVWS-API zwar Pflichtfelder,
-   aber als leeres Array zulässig). Die Felder `schueler` und `weitereLehrer` werden trotz gleicher
-   Pflichtfeld-Kennzeichnung im Schema bewusst **nicht** mitgeschickt – der Server lehnt beide beim Anlegen
-   ab ("Das Patchen des Attributes schueler/weitereLehrer wird nicht unterstützt."), diese Zuordnungen
-   laufen offenbar über einen anderen API-Weg. Der neue Kurs ist also zunächst keinem Jahrgang/keiner
-   Lehrkraft/keinen Schüler:innen direkt zugeordnet und muss dafür ggf. noch in Schild selbst
-   nachbearbeitet werden; für den reinen Zweck dieses Tools (Leistungsdaten anlegen) reicht das bereits.
+   Fest auf eine leere Liste gesetzt bleibt `schienen` (laut SVWS-API zwar Pflichtfeld, aber als leeres
+   Array zulässig; relevant nur für die Blockplanung in der Oberstufe). Die Felder `schueler` und
+   `weitereLehrer` werden trotz gleicher Pflichtfeld-Kennzeichnung im Schema bewusst **nicht**
+   mitgeschickt – der Server lehnt beide beim Anlegen ab ("Das Patchen des Attributes
+   schueler/weitereLehrer wird nicht unterstützt."), diese Zuordnungen laufen offenbar über einen anderen
+   API-Weg. Der neue Kurs ist also zunächst keiner Lehrkraft/keinen Schüler:innen direkt zugeordnet und
+   muss dafür ggf. noch in Schild selbst nachbearbeitet werden; für den reinen Zweck dieses Tools
+   (Leistungsdaten anlegen) reicht das bereits.
 6. **Übertragung**: Default-Werte für neu anzulegende Leistungsdaten einstellen (Kursart-Fallback,
    Wochenstunden-Fallback, Zeugnis-Umfang, "Auf Zeugnis", Epochalunterricht). Über "Vorschau berechnen"
    prüft das Tool für jede gematchte Schüler×Kurs-Kombination gegen die tatsächlichen Lernabschnittsdaten,
@@ -270,6 +276,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getKlassen(abschnittId)` | `GET /klassen/details/abschnitt/{id}` | Klassenliste inkl. `schueler[]` je Klasse (für Klassen-Kürzel je Schüler) |
 | `getFaecher()` | `GET /faecher` | Fächerliste |
 | `getKursarten()` | `GET /kurse/allgemein/kursarten` | Katalog gültiger Kursarten (für "Neuen Kurs anlegen"-Dialog) |
+| `getJahrgaenge()` | `GET /jahrgaenge` | Katalog aller Jahrgänge (für Jahrgangs-Vorbelegung im "Neuen Kurs anlegen"-Dialog) |
 | `createKurs(kursDaten)` | `POST /kurse/create` | Legt einen neuen Kurs an, gibt ihn inkl. neuer ID zurück |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
