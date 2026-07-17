@@ -249,6 +249,7 @@
       reveal("section-nachbereitung");
       buildDatalists();
       populateCreateKursDialogOptions();
+      populateKurseOhneWahlFilters();
       renderSplitJahrgangTable();
       renderSplitKlasseTable();
     } catch (err) {
@@ -1406,7 +1407,217 @@
     $("btn-delete-check-leerer-kurs").disabled = checkLeererKursResults.length === 0;
   }
 
-  // ---------- 8b. Split in Jahrgangskurse ----------
+  // ---------- 8b. Kurse ohne Forms-Wahl ----------
+
+  let kurseOhneWahlResults = []; // [{schuelerId, schuelerLabel, fachLabel, kursart, kursLabel, leistungsdatenId}]
+  let kurseOhneWahlSort = { key: "schueler", dir: "asc" };
+
+  /** Zeigt im Vergleich nur Fächer/Kursarten an, die tatsächlich in geladenen Kursen vorkommen (statt des
+   *  ganzen Schild-Fächerkatalogs) - hält die Filterliste handhabbar. */
+  function populateKurseOhneWahlFilters() {
+    const fachIdsInKursen = new Set(schildKurse.map((k) => k.idFach).filter((id) => id != null));
+    const relevantFaecher = schildFaecher
+      .filter((f) => fachIdsInKursen.has(f.id))
+      .sort((a, b) => a.kuerzel.localeCompare(b.kuerzel, "de"));
+    $("kurse-ohne-wahl-fach-filter").innerHTML = relevantFaecher
+      .map((f) => `<label><input type="checkbox" class="kurse-ohne-wahl-fach-cb" value="${f.id}" checked/> ${escapeHtml(f.kuerzel)}</label>`)
+      .join("");
+
+    const kursarten = Array.from(new Set(schildKurse.map((k) => k.kursartAllg).filter(Boolean))).sort();
+    $("kurse-ohne-wahl-kursart-filter").innerHTML = kursarten
+      .map((ka) => `<label><input type="checkbox" class="kurse-ohne-wahl-kursart-cb" value="${escapeHtml(ka)}" checked/> ${escapeHtml(ka)}</label>`)
+      .join("");
+  }
+
+  async function onRunKurseOhneWahl() {
+    const statusEl = $("kurse-ohne-wahl-status");
+    if (studentEntries.length === 0) {
+      setStatus(statusEl, "Bitte zuerst Schritte 3–5 (Forms-Datei laden, Spaltenzuordnung, Abgleich) durchführen.", "error");
+      return;
+    }
+    const erlaubteFachIds = new Set(
+      Array.from(document.querySelectorAll(".kurse-ohne-wahl-fach-cb:checked")).map((cb) => Number(cb.value))
+    );
+    const erlaubteKursarten = new Set(
+      Array.from(document.querySelectorAll(".kurse-ohne-wahl-kursart-cb:checked")).map((cb) => cb.value)
+    );
+    if (erlaubteFachIds.size === 0 || erlaubteKursarten.size === 0) {
+      setStatus(statusEl, "Bitte mindestens ein Fach und eine Kursart auswählen.", "error");
+      return;
+    }
+
+    // Nur Schüler:innen mit einer nicht-ignorierten Zuordnung aus Schritt 4, inkl. der Menge ihrer
+    // gewählten (nicht-ignorierten) Kurs-IDs aus Schritt 5.
+    const kandidaten = studentEntries
+      .map((entry) => {
+        const match = Matching.lookup(state.schuelerMatching, entry.formsName);
+        if (!match || match.ignored || match.targetId == null) return null;
+        const schueler = schuelerById.get(match.targetId);
+        if (!schueler) return null;
+        const chosenKursIds = new Set();
+        for (const courseText of entry.courses) {
+          const courseMatch = Matching.lookup(state.kursMatching, courseText);
+          if (courseMatch && !courseMatch.ignored && courseMatch.targetId != null) chosenKursIds.add(courseMatch.targetId);
+        }
+        return { schueler, chosenKursIds };
+      })
+      .filter(Boolean);
+    if (kandidaten.length === 0) {
+      setStatus(statusEl, "Keine gematchten Schüler:innen gefunden (Schritt 4 abgeschlossen?).", "error");
+      return;
+    }
+
+    const progressEl = $("kurse-ohne-wahl-progress");
+    const total = kandidaten.length;
+    let processed = 0;
+    progressEl.max = total;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+    setStatus(statusEl, `Prüfe 0 / ${total} Schüler:innen …`, "");
+    $("btn-run-kurse-ohne-wahl").disabled = true;
+
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    const results = [];
+    let fehler = 0;
+    await mapWithConcurrency(kandidaten, 6, async ({ schueler, chosenKursIds }) => {
+      try {
+        const lad = await SvwsApi.getLernabschnittsdaten(schueler.id, abschnittId);
+        for (const eintrag of lad.leistungsdaten || []) {
+          if (eintrag.kursID == null) continue; // Klassenunterricht, hier nicht relevant
+          if (!erlaubteFachIds.has(eintrag.fachID)) continue;
+          if (!erlaubteKursarten.has(eintrag.kursart)) continue;
+          if (chosenKursIds.has(eintrag.kursID)) continue; // wurde gewählt -> kein Treffer
+          const kurs = kursById.get(eintrag.kursID);
+          const fach = fachById.get(eintrag.fachID);
+          results.push({
+            schuelerId: schueler.id,
+            schuelerLabel: schuelerLabel(schueler),
+            fachLabel: fach ? `${fach.kuerzel} – ${fach.bezeichnung || ""}` : `Fach-ID ${eintrag.fachID}`,
+            kursart: eintrag.kursart || "",
+            kursLabel: kurs ? kursLabel(kurs) : `Kurs-ID ${eintrag.kursID}`,
+            leistungsdatenId: eintrag.id,
+          });
+        }
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Prüfe ${processed} / ${total} Schüler:innen … (${results.length} Treffer bisher)`, "");
+      }
+    });
+
+    kurseOhneWahlResults = results;
+    progressEl.classList.add("hidden");
+    renderKurseOhneWahlTable();
+    $("btn-run-kurse-ohne-wahl").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} Kurs-Einträge ohne passende Forms-Wahl gefunden${fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : ""}.`,
+      results.length ? "warn" : "ok"
+    );
+  }
+
+  function compareKurseOhneWahl(a, b, key) {
+    if (key === "id") return a.leistungsdatenId - b.leistungsdatenId;
+    if (key === "fach") return a.fachLabel.localeCompare(b.fachLabel, "de");
+    if (key === "kursart") return (a.kursart || "").localeCompare(b.kursart || "", "de");
+    if (key === "kurs") return a.kursLabel.localeCompare(b.kursLabel, "de");
+    return a.schuelerLabel.localeCompare(b.schuelerLabel, "de");
+  }
+
+  function updateKurseOhneWahlSortIndicators() {
+    document.querySelectorAll("#kurse-ohne-wahl-table .th-sort-btn").forEach((btn) => {
+      const active = btn.dataset.sortKey === kurseOhneWahlSort.key;
+      const arrow = active ? (kurseOhneWahlSort.dir === "asc" ? " ▲" : " ▼") : "";
+      btn.textContent = btn.dataset.label + arrow;
+      btn.classList.toggle("sort-active", active);
+    });
+  }
+
+  function onKurseOhneWahlSortClick(evt) {
+    const btn = evt.target.closest(".th-sort-btn");
+    if (!btn) return;
+    const key = btn.dataset.sortKey;
+    if (kurseOhneWahlSort.key === key) kurseOhneWahlSort.dir = kurseOhneWahlSort.dir === "asc" ? "desc" : "asc";
+    else kurseOhneWahlSort = { key, dir: "asc" };
+    updateKurseOhneWahlSortIndicators();
+    renderKurseOhneWahlTable();
+  }
+
+  function renderKurseOhneWahlTable() {
+    const tbody = document.querySelector("#kurse-ohne-wahl-table tbody");
+    const suchtext = $("kurse-ohne-wahl-suche").value.trim().toLowerCase();
+    let rows = kurseOhneWahlResults;
+    if (suchtext) {
+      rows = rows.filter((r) =>
+        [r.schuelerLabel, r.fachLabel, r.kursart, r.kursLabel].some((v) => v.toLowerCase().includes(suchtext))
+      );
+    }
+    rows = [...rows].sort((a, b) => {
+      const cmp = compareKurseOhneWahl(a, b, kurseOhneWahlSort.key);
+      return kurseOhneWahlSort.dir === "asc" ? cmp : -cmp;
+    });
+    tbody.innerHTML = rows
+      .map(
+        (r) => `
+      <tr>
+        <td><input type="checkbox" class="kurse-ohne-wahl-row" data-id="${r.leistungsdatenId}" checked /></td>
+        <td>${escapeHtml(r.schuelerLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.kursart)}</td>
+        <td>${escapeHtml(r.kursLabel)}</td>
+        <td>${r.leistungsdatenId}</td>
+        <td><button type="button" class="btn-secondary kurse-ohne-wahl-delete-single" data-id="${r.leistungsdatenId}">Löschen</button></td>
+      </tr>`
+      )
+      .join("");
+    $("kurse-ohne-wahl-select-all").checked = rows.length > 0;
+    $("btn-delete-kurse-ohne-wahl").disabled = rows.length === 0;
+  }
+
+  function onKurseOhneWahlSelectAll(evt) {
+    document.querySelectorAll(".kurse-ohne-wahl-row").forEach((cb) => (cb.checked = evt.target.checked));
+  }
+
+  async function deleteKurseOhneWahlIds(ids) {
+    const log = $("kurse-ohne-wahl-log");
+    log.textContent = `Lösche ${ids.length} Leistungsdaten-Einträge …\n`;
+    $("btn-delete-kurse-ohne-wahl").disabled = true;
+
+    const result = await batchWithBisection(ids, (subset) => SvwsApi.deleteLeistungsdatenMultiple(subset));
+    const geloeschtIds = new Set(ids.filter((id) => !result.failed.some((f) => f.item === id)));
+    kurseOhneWahlResults = kurseOhneWahlResults.filter((r) => !geloeschtIds.has(r.leistungsdatenId));
+    renderKurseOhneWahlTable();
+
+    if (result.failed.length === 0) {
+      log.textContent += `${result.ok} Einträge erfolgreich gelöscht.\n`;
+      setStatus($("kurse-ohne-wahl-status"), `${result.ok} Einträge gelöscht.`, "ok");
+    } else {
+      log.textContent += `${result.ok} gelöscht, ${result.failed.length} fehlgeschlagen:\n`;
+      for (const f of result.failed) log.textContent += `- Leistungsdaten-ID ${f.item}: ${f.message}\n`;
+      setStatus($("kurse-ohne-wahl-status"), `${result.ok} gelöscht, ${result.failed.length} fehlgeschlagen.`, "warn");
+    }
+    $("btn-delete-kurse-ohne-wahl").disabled = kurseOhneWahlResults.length === 0;
+  }
+
+  async function onDeleteKurseOhneWahlSelected() {
+    const checked = Array.from(document.querySelectorAll(".kurse-ohne-wahl-row:checked"));
+    if (checked.length === 0) return;
+    const sicher = confirm(
+      `${checked.length} Leistungsdaten-Einträge wirklich unwiderruflich in Schild löschen? Das kann nicht rückgängig gemacht werden.`
+    );
+    if (!sicher) return;
+    await deleteKurseOhneWahlIds(checked.map((cb) => Number(cb.dataset.id)));
+  }
+
+  async function onDeleteKurseOhneWahlSingle(evt) {
+    const sicher = confirm("Diesen Leistungsdaten-Eintrag wirklich unwiderruflich in Schild löschen? Das kann nicht rückgängig gemacht werden.");
+    if (!sicher) return;
+    await deleteKurseOhneWahlIds([Number(evt.target.dataset.id)]);
+  }
+
+  // ---------- 8c. Split in Jahrgangskurse ----------
 
   function jahrgangOptionsHtml(selectedId) {
     const optionen = ['<option value="">(wählen)</option>'].concat(
@@ -1676,7 +1887,7 @@
     );
   }
 
-  // ---------- 8c. Split in Klassenkurse ----------
+  // ---------- 8d. Split in Klassenkurse ----------
   // Strukturell identisch zu "Split in Jahrgangskurse" oben, nur nach Klasse statt Jahrgang gruppiert.
   // Bewusst als eigener, paralleler Funktionsblock gehalten statt generalisiert: die beiden
   // Dimensionen unterscheiden sich an mehreren Stellen genug (Schuelerfeld idKlasse vs. idJahrgang,
@@ -1961,6 +2172,16 @@
     $("btn-run-check-leerer-kurs").addEventListener("click", onRunCheckLeererKurs);
     $("check-leerer-kurs-select-all").addEventListener("change", onCheckLeererKursSelectAll);
     $("btn-delete-check-leerer-kurs").addEventListener("click", onDeleteCheckLeererKurs);
+
+    $("btn-run-kurse-ohne-wahl").addEventListener("click", onRunKurseOhneWahl);
+    $("kurse-ohne-wahl-select-all").addEventListener("change", onKurseOhneWahlSelectAll);
+    $("btn-delete-kurse-ohne-wahl").addEventListener("click", onDeleteKurseOhneWahlSelected);
+    $("kurse-ohne-wahl-suche").addEventListener("input", renderKurseOhneWahlTable);
+    document.querySelector("#kurse-ohne-wahl-table").addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("kurse-ohne-wahl-delete-single")) onDeleteKurseOhneWahlSingle(evt);
+    });
+    document.querySelector("#kurse-ohne-wahl-table thead").addEventListener("click", onKurseOhneWahlSortClick);
+    updateKurseOhneWahlSortIndicators();
 
     $("btn-split-jahrgang-add-row").addEventListener("click", onSplitJahrgangAddRow);
     $("btn-split-jahrgang-execute").addEventListener("click", onExecuteSplitJahrgang);

@@ -305,6 +305,43 @@
   <button id="btn-delete-check-leerer-kurs" class="btn-danger" disabled>Ausgewählte löschen</button>
   <div id="check-leerer-kurs-log" class="log"></div>
 
+  <h3>Kurse ohne Forms-Wahl</h3>
+  <p class="hint">
+    Vergleicht für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen Schild-Kurse mit ihren
+    gematchten Forms-Kurswahlen aus Schritt 5 und findet Leistungsdaten-Einträge zu Kursen, die laut Forms
+    nicht (mehr) gewählt wurden – z.B. Reste einer alten AG-Wahl. Setzt einen abgeschlossenen
+    Forms-Abgleich voraus (Schritte 3–5). Da reguläre Fachkurse (Mathematik, Deutsch, …) nichts mit der
+    Forms-Umfrage zu tun haben und sonst immer als "nicht gewählt" auftauchen würden, muss der Vergleich
+    auf mindestens ein Fach und eine Kursart eingegrenzt werden.
+  </p>
+  <div class="checkbox-row" id="kurse-ohne-wahl-fach-filter"></div>
+  <div class="checkbox-row" id="kurse-ohne-wahl-kursart-filter"></div>
+  <button id="btn-run-kurse-ohne-wahl">Prüfen</button>
+  <span id="kurse-ohne-wahl-status" class="status-msg"></span>
+  <progress id="kurse-ohne-wahl-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div>
+    <input type="text" id="kurse-ohne-wahl-suche" placeholder="Suchen (Schüler, Fach, Kursart, Kurs) …" />
+  </div>
+  <div class="table-scroll">
+    <table id="kurse-ohne-wahl-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="kurse-ohne-wahl-select-all" /></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="schueler" data-label="Schüler">Schüler</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="fach" data-label="Fach">Fach</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="kursart" data-label="Kursart">Kursart</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="kurs" data-label="Kurs">Kurs</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="id" data-label="Leistungsdaten-ID">Leistungsdaten-ID</button></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button id="btn-delete-kurse-ohne-wahl" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <div id="kurse-ohne-wahl-log" class="log"></div>
+
   <h3>Split in Jahrgangskurse</h3>
   <p class="hint">
     Verschiebt Schüler:innen eines Jahrgangs von einem Quellkurs in einen Zielkurs (z.B. um einen

@@ -136,6 +136,21 @@ vorherige Schritt erledigt ist.
    markierten Leistungsdaten-Einträge dauerhaft aus Schild entfernen. Weitere Kontrollen lassen sich über
    `js/check.js` ergänzen.
 
+   **"Kurse ohne Forms-Wahl"**: vergleicht für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen
+   Schild-Kurse mit ihren gematchten Forms-Kurswahlen aus Schritt 5 und findet Leistungsdaten-Einträge zu
+   Kursen, die laut Forms nicht (mehr) gewählt wurden – z.B. Reste einer alten AG-Wahl. Setzt einen
+   abgeschlossenen Forms-Abgleich voraus (Schritte 3–5); ohne das erscheint eine Fehlermeldung statt
+   Ergebnissen. Da reguläre Fachkurse (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage zu tun haben
+   und sonst immer als "nicht gewählt" auftauchen würden, **muss** der Vergleich zunächst auf mindestens
+   ein Fach und eine Kursart eingegrenzt werden (Checkboxen, vorbelegt mit allen Fächern/Kursarten, die
+   tatsächlich in geladenen Kursen vorkommen – nicht der komplette Schild-Fächerkatalog). Die
+   Ergebnistabelle unterstützt:
+   - **Sortierbare Spalten** (Schüler, Fach, Kursart, Kurs, Leistungsdaten-ID) – Klick auf die
+     Spaltenüberschrift, wie bei "Schüler ohne Forms-Abgabe" in Schritt 4a.
+   - **Ein Suchfeld**, das live über Schüler-, Fach-, Kursart- und Kurstext filtert.
+   - **Löschen einzeln** (Button je Zeile) oder **über Checkboxen mehrere auf einmal** (alle standardmäßig
+     ausgewählt).
+
    **"Split in Jahrgangskurse"**: verschiebt Schüler:innen eines Jahrgangs aus einem gemeinsam angelegten
    Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
    jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
@@ -488,7 +503,25 @@ Funktionen rund um Schritt 8 (Nachbereitung):
   `createBatchWithBisection()` (siehe Fehlerbehebung Nr. 2) - funktioniert für beliebige Batch-Aufrufe
   (Anlegen *und* Löschen), nicht nur für Leistungsdaten-Erstellung. `items` müssen keine fertigen Payloads
   sein; `apiCall` entscheidet, was daraus gesendet wird, `failed[].item` bleibt die Original-Referenz.
-  Wird von `onExecuteTransfer()`, `onDeleteCheckLeererKurs()` und `onExecuteSplitJahrgang()` genutzt.
+  Wird von `onExecuteTransfer()`, `onDeleteCheckLeererKurs()`, `onExecuteSplitJahrgang()`,
+  `onExecuteSplitKlasse()` und `deleteKurseOhneWahlIds()` genutzt.
+
+Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8):
+
+- `populateKurseOhneWahlFilters()`: befüllt die Fach-/Kursart-Checkboxen aus den tatsächlich in
+  `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Wird nach jedem "Schild-Daten laden"
+  neu aufgerufen.
+- `onRunKurseOhneWahl()`: baut zunächst pro Schritt-4-Match die Menge `chosenKursIds` (alle
+  nicht-ignorierten Kurs-Treffer aus `state.kursMatching` für die Kurswahlen dieser Person), holt dann
+  konkurrenzbegrenzt die Lernabschnittsdaten und meldet Leistungsdaten-Einträge mit `kursID`, die (a)
+  durch den Fach-/Kursart-Filter kommen und (b) nicht in `chosenKursIds` enthalten sind.
+- `renderKurseOhneWahlTable()`: wendet Suchfilter (`#kurse-ohne-wahl-suche`, Substring über alle
+  Anzeigespalten) und Sortierung (`compareKurseOhneWahl()`, gleiches Sortier-Muster wie
+  `compareMissingStudents()` in Schritt 4a) auf `kurseOhneWahlResults` an, bevor gerendert wird - beides
+  rein clientseitig auf dem bereits geladenen Ergebnis, keine erneuten Server-Anfragen.
+- `deleteKurseOhneWahlIds(ids)`: gemeinsame Löschroutine für sowohl den Einzel-Löschen-Button je Zeile
+  (`onDeleteKurseOhneWahlSingle()`) als auch das Mehrfach-Löschen über Checkboxen
+  (`onDeleteKurseOhneWahlSelected()`), beide mit `confirm()`-Sicherheitsabfrage.
 
 Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
 
