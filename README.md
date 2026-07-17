@@ -181,7 +181,10 @@ vorherige Schritt erledigt ist.
    (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage zu tun haben und sonst immer als "nicht gewählt"
    auftauchen würden, **muss** der Vergleich zunächst auf mindestens ein Fach und eine Kursart eingegrenzt
    werden (Checkboxen, vorbelegt mit allen Fächern/Kursarten, die tatsächlich in geladenen Kursen vorkommen
-   – nicht der komplette Schild-Fächerkatalog). Die Ergebnistabelle unterstützt:
+   – nicht der komplette Schild-Fächerkatalog). Je eine **"alle"-Checkbox** über den beiden Gruppen
+   wählt die gesamte Gruppe auf einmal an oder ab; die zuletzt getroffene Auswahl wird persistiert
+   (localStorage + JSON-Export) und beim nächsten Öffnen wiederhergestellt. Die Ergebnistabelle
+   unterstützt:
    - **Sortierbare Spalten** (Schüler, Fach, Kursart, Kurs, Leistungsdaten-ID) – Klick auf die
      Spaltenüberschrift, wie bei "Schüler ohne Forms-Abgabe" in Schritt 4a.
    - **Ein Suchfeld**, das live über Schüler-, Fach-, Kursart- und Kurstext filtert.
@@ -555,8 +558,16 @@ Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8, bewusst *nach* den beiden
 platziert, da sie deren Konfiguration liest):
 
 - `populateKurseOhneWahlFilters()`: befüllt die Fach-/Kursart-Checkboxen aus den tatsächlich in
-  `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Wird nach jedem "Schild-Daten laden"
-  neu aufgerufen.
+  `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Vorbelegung ist die zuletzt
+  gespeicherte Auswahl aus `state.kurseOhneWahlFilter` (persistiert; leeres Array = "noch nichts
+  gespeichert" → alle angehakt, analog zu `state.statusFilter` in Schritt 1). Wird nach jedem
+  "Schild-Daten laden" neu aufgerufen.
+- `persistKurseOhneWahlFilter()`: schreibt die aktuell angehakten Fach-/Kursart-Checkboxen in
+  `state.kurseOhneWahlFilter` und speichert; läuft bei jeder Änderung einer Einzel- oder "alle"-Checkbox.
+- `onKurseOhneWahlFachSelectAll()` / `onKurseOhneWahlKursartSelectAll()`: setzen alle Checkboxen der
+  jeweiligen Gruppe auf einmal. `updateKurseOhneWahlSelectAllCheckboxes()` hält umgekehrt die beiden
+  "alle"-Checkboxen konsistent mit dem Zustand ihrer Gruppe (nur angehakt, wenn wirklich jede
+  Einzel-Checkbox angehakt ist).
 - `buildSplitZielZuQuellMap()`: baut aus den vollständigen Zeilen *beider* Split-Bereiche
   (`state.splitJahrgangRows` + `state.splitKlasseRows`) eine Zielkurs-ID → Quellkurs-ID-Abbildung.
 - `resolveUrsprungsKurs(kursId, zielZuQuell)`: verfolgt einen Kurs rückwärts über ggf. mehrere

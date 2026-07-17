@@ -20,6 +20,7 @@
       courseSplitDelimiter: "", // Trennzeichen für Kurs-Rewrite (Schritt 3a); leer = kein Split
       splitJahrgangRows: [], // [{quellkursId, jahrgangId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
       splitKlasseRows: [], // [{quellkursId, klasseId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
+      kurseOhneWahlFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Kurse ohne Forms-Wahl"; leer = alle (Default)
       schuelerMatching: {},
       kursMatching: {},
       leistungsdatenDefaults: {
@@ -56,6 +57,7 @@
       columnMapping: { ...defaults.columnMapping, ...(loaded.columnMapping || {}) },
       columnPrefixes: loaded.columnPrefixes || {},
       leistungsdatenDefaults: { ...defaults.leistungsdatenDefaults, ...(loaded.leistungsdatenDefaults || {}) },
+      kurseOhneWahlFilter: { ...defaults.kurseOhneWahlFilter, ...(loaded.kurseOhneWahlFilter || {}) },
       schuelerMatching: loaded.schuelerMatching || {},
       kursMatching: loaded.kursMatching || {},
       statusFilter: loaded.statusFilter || [],

@@ -1983,19 +1983,70 @@
 
   /** Zeigt im Vergleich nur Fächer/Kursarten an, die tatsächlich in geladenen Kursen vorkommen (statt des
    *  ganzen Schild-Fächerkatalogs) - hält die Filterliste handhabbar. */
+  /** Befüllt die Fach-/Kursart-Filter-Checkboxen. Vorbelegung: die zuletzt gespeicherte Auswahl aus
+   *  `state.kurseOhneWahlFilter` (persistiert), falls vorhanden - sonst sind standardmäßig alle
+   *  angehakt (wie beim Status-Filter in Schritt 1). */
   function populateKurseOhneWahlFilters() {
+    const gespeichertFach = state.kurseOhneWahlFilter.fachIds || [];
+    const gespeichertKursart = state.kurseOhneWahlFilter.kursarten || [];
+
     const fachIdsInKursen = new Set(schildKurse.map((k) => k.idFach).filter((id) => id != null));
     const relevantFaecher = schildFaecher
       .filter((f) => fachIdsInKursen.has(f.id))
       .sort((a, b) => a.kuerzel.localeCompare(b.kuerzel, "de"));
     $("kurse-ohne-wahl-fach-filter").innerHTML = relevantFaecher
-      .map((f) => `<label><input type="checkbox" class="kurse-ohne-wahl-fach-cb" value="${f.id}" checked/> ${escapeHtml(f.kuerzel)}</label>`)
+      .map((f) => {
+        const checked = gespeichertFach.length > 0 ? gespeichertFach.includes(f.id) : true;
+        return `<label><input type="checkbox" class="kurse-ohne-wahl-fach-cb" value="${f.id}" ${checked ? "checked" : ""}/> ${escapeHtml(f.kuerzel)}</label>`;
+      })
       .join("");
 
     const kursarten = Array.from(new Set(schildKurse.map((k) => k.kursartAllg).filter(Boolean))).sort();
     $("kurse-ohne-wahl-kursart-filter").innerHTML = kursarten
-      .map((ka) => `<label><input type="checkbox" class="kurse-ohne-wahl-kursart-cb" value="${escapeHtml(ka)}" checked/> ${escapeHtml(ka)}</label>`)
+      .map((ka) => {
+        const checked = gespeichertKursart.length > 0 ? gespeichertKursart.includes(ka) : true;
+        return `<label><input type="checkbox" class="kurse-ohne-wahl-kursart-cb" value="${escapeHtml(ka)}" ${checked ? "checked" : ""}/> ${escapeHtml(ka)}</label>`;
+      })
       .join("");
+
+    document
+      .querySelectorAll(".kurse-ohne-wahl-fach-cb, .kurse-ohne-wahl-kursart-cb")
+      .forEach((cb) => cb.addEventListener("change", onKurseOhneWahlFilterChange));
+    updateKurseOhneWahlSelectAllCheckboxes();
+  }
+
+  /** Speichert die aktuelle Fach-/Kursart-Auswahl in `state.kurseOhneWahlFilter` (localStorage + JSON). */
+  function persistKurseOhneWahlFilter() {
+    state.kurseOhneWahlFilter = {
+      fachIds: Array.from(document.querySelectorAll(".kurse-ohne-wahl-fach-cb:checked")).map((cb) => Number(cb.value)),
+      kursarten: Array.from(document.querySelectorAll(".kurse-ohne-wahl-kursart-cb:checked")).map((cb) => cb.value),
+    };
+    persist();
+  }
+
+  /** Hält die beiden "alle"-Checkboxen konsistent mit dem Zustand ihrer Gruppe (angehakt nur, wenn
+   *  wirklich jede Einzel-Checkbox der Gruppe angehakt ist). */
+  function updateKurseOhneWahlSelectAllCheckboxes() {
+    const fachCbs = document.querySelectorAll(".kurse-ohne-wahl-fach-cb");
+    $("kurse-ohne-wahl-fach-select-all").checked = fachCbs.length > 0 && Array.from(fachCbs).every((cb) => cb.checked);
+    const kursartCbs = document.querySelectorAll(".kurse-ohne-wahl-kursart-cb");
+    $("kurse-ohne-wahl-kursart-select-all").checked =
+      kursartCbs.length > 0 && Array.from(kursartCbs).every((cb) => cb.checked);
+  }
+
+  function onKurseOhneWahlFilterChange() {
+    persistKurseOhneWahlFilter();
+    updateKurseOhneWahlSelectAllCheckboxes();
+  }
+
+  function onKurseOhneWahlFachSelectAll(evt) {
+    document.querySelectorAll(".kurse-ohne-wahl-fach-cb").forEach((cb) => (cb.checked = evt.target.checked));
+    persistKurseOhneWahlFilter();
+  }
+
+  function onKurseOhneWahlKursartSelectAll(evt) {
+    document.querySelectorAll(".kurse-ohne-wahl-kursart-cb").forEach((cb) => (cb.checked = evt.target.checked));
+    persistKurseOhneWahlFilter();
   }
 
   /** Baut aus den (vollständigen) Zeilen beider Split-Bereiche eine Zielkurs-ID -> Quellkurs-ID -
@@ -2260,6 +2311,8 @@
     $("check-leerer-kurs-select-all").addEventListener("change", onCheckLeererKursSelectAll);
     $("btn-delete-check-leerer-kurs").addEventListener("click", onDeleteCheckLeererKurs);
 
+    $("kurse-ohne-wahl-fach-select-all").addEventListener("change", onKurseOhneWahlFachSelectAll);
+    $("kurse-ohne-wahl-kursart-select-all").addEventListener("change", onKurseOhneWahlKursartSelectAll);
     $("btn-run-kurse-ohne-wahl").addEventListener("click", onRunKurseOhneWahl);
     $("kurse-ohne-wahl-select-all").addEventListener("change", onKurseOhneWahlSelectAll);
     $("btn-delete-kurse-ohne-wahl").addEventListener("click", onDeleteKurseOhneWahlSelected);
