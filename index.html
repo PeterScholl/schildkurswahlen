@@ -104,6 +104,30 @@
   <datalist id="schueler-datalist"></datalist>
 </section>
 
+<section id="section-missing-students" class="card hidden">
+  <h2>4a. Schüler ohne Forms-Abgabe</h2>
+  <p class="hint">
+    Zeigt Schild-Schüler:innen (aus der in Schritt 2 geladenen, statusgefilterten Liste), die bislang
+    keiner Forms-Zeile zugeordnet sind – Stand der Zuordnungen aus Schritt 4. Über die Klassenauswahl in
+    der Kopfzeile lässt sich auf eine Klasse eingrenzen; nach der ersten Auswahl kann mit den Pfeiltasten
+    hoch/runter klassenweise weitergeblättert werden.
+  </p>
+  <button id="btn-check-missing-students">Prüfen / Aktualisieren</button>
+  <span id="missing-students-status" class="status-msg"></span>
+  <div class="table-scroll">
+    <table id="missing-students-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Schild-ID</th>
+          <th>Klasse <select id="missing-students-klasse-filter"><option value="">Alle Klassen</option></select></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
 <section id="section-course-matching" class="card hidden">
   <h2>5. Abgleich Kurse</h2>
   <button id="btn-automatch-courses">Automatisch matchen</button>

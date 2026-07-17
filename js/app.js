@@ -15,8 +15,12 @@
   let schildSchueler = [];
   let schildKurse = [];
   let schildFaecher = [];
+  let schildKlassen = [];
   let schuelerById = new Map();
   let kursById = new Map();
+  let klassenKuerzelById = new Map();
+
+  let missingStudents = []; // [{id, nachname, vorname, klasse}] – Schild-Schüler ohne Forms-Zuordnung
 
   let formsParsed = null; // { headers, rows }
   let studentEntries = []; // [{formsName, courses, rowIndex}] – ein Eintrag pro eindeutigem Forms-Namen
@@ -162,9 +166,23 @@
       schuelerById = new Map(schildSchueler.map((s) => [s.id, s]));
       kursById = new Map(schildKurse.map((k) => [k.id, k]));
 
+      // Klassen sind nur eine Zusatzinfo für Schritt 4a ("Klasse"-Spalte) - ein Fehler hier soll
+      // nicht den ganzen Schritt blockieren, falls dieser Endpunkt auf einem Server mal nicht
+      // verfügbar ist (z.B. abweichende Server-Version).
+      let klassenHinweis = "";
+      try {
+        schildKlassen = await SvwsApi.getKlassen(abschnittId);
+        klassenKuerzelById = new Map(schildKlassen.map((k) => [k.id, k.kuerzel || k.beschreibung || "–"]));
+      } catch (klassenErr) {
+        schildKlassen = [];
+        klassenKuerzelById = new Map();
+        klassenHinweis = " Klassen konnten nicht geladen werden (Klassen-Spalte bei „Schüler ohne Forms-Abgabe“ bleibt leer).";
+        console.warn("Klassen konnten nicht geladen werden:", klassenErr);
+      }
+
       $("schild-data-counts").textContent =
-        `${schildSchueler.length} Schüler (gefiltert), ${schildKurse.length} Kurse, ${schildFaecher.length} Fächer geladen.`;
-      setStatus(statusEl, "Fertig.", "ok");
+        `${schildSchueler.length} Schüler (gefiltert), ${schildKurse.length} Kurse, ${schildFaecher.length} Fächer, ${schildKlassen.length} Klassen geladen.`;
+      setStatus(statusEl, "Fertig." + klassenHinweis, klassenHinweis ? "warn" : "ok");
       reveal("section-forms-import");
       buildDatalists();
     } catch (err) {
@@ -285,6 +303,7 @@
     renderStudentMatchTable();
     renderCourseMatchTable();
     reveal("section-student-matching");
+    reveal("section-missing-students");
     reveal("section-course-matching");
     reveal("section-transfer");
   }
@@ -454,6 +473,62 @@
       `${result.matched} automatisch gematcht, ${result.review.length} benötigen manuelle Prüfung.`,
       result.review.length ? "warn" : "ok"
     );
+  }
+
+  // ---------- 4a. Schüler ohne Forms-Abgabe ----------
+
+  /** Alle Schild-Schüler-IDs, denen aktuell (Schritt 4) eine nicht-ignorierte Forms-Zeile zugeordnet ist. */
+  function getMatchedSchuelerIds() {
+    const ids = new Set();
+    for (const match of Object.values(state.schuelerMatching)) {
+      if (match && !match.ignored && match.targetId != null) ids.add(match.targetId);
+    }
+    return ids;
+  }
+
+  function onCheckMissingStudents() {
+    const matchedIds = getMatchedSchuelerIds();
+    missingStudents = schildSchueler
+      .filter((s) => !matchedIds.has(s.id))
+      .map((s) => ({
+        id: s.id,
+        nachname: s.nachname,
+        vorname: s.vorname,
+        klasse: klassenKuerzelById.get(s.idKlasse) || "–",
+      }))
+      .sort((a, b) => a.nachname.localeCompare(b.nachname, "de") || a.vorname.localeCompare(b.vorname, "de"));
+
+    renderMissingStudentsKlasseFilter();
+    renderMissingStudentsTable();
+    setStatus(
+      $("missing-students-status"),
+      `${missingStudents.length} von ${schildSchueler.length} Schüler:innen ohne zugeordnete Forms-Abgabe.`,
+      missingStudents.length ? "warn" : "ok"
+    );
+  }
+
+  function renderMissingStudentsKlasseFilter() {
+    const select = $("missing-students-klasse-filter");
+    const previousValue = select.value;
+    const klassen = Array.from(new Set(missingStudents.map((s) => s.klasse))).sort((a, b) =>
+      a.localeCompare(b, "de", { numeric: true })
+    );
+    select.innerHTML =
+      '<option value="">Alle Klassen</option>' +
+      klassen.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join("");
+    if (klassen.includes(previousValue)) select.value = previousValue;
+  }
+
+  function renderMissingStudentsTable() {
+    const tbody = document.querySelector("#missing-students-table tbody");
+    const selectedKlasse = $("missing-students-klasse-filter").value;
+    const rows = selectedKlasse ? missingStudents.filter((s) => s.klasse === selectedKlasse) : missingStudents;
+    tbody.innerHTML = rows
+      .map(
+        (s) =>
+          `<tr><td>${escapeHtml(s.nachname)}, ${escapeHtml(s.vorname)}</td><td>${s.id}</td><td>${escapeHtml(s.klasse)}</td></tr>`
+      )
+      .join("");
   }
 
   // ---------- 5. Abgleich Kurse ----------
@@ -869,6 +944,9 @@
     $("forms-file-input").addEventListener("change", onFormsFileSelected);
     $("btn-apply-mapping").addEventListener("click", onApplyMapping);
     $("btn-automatch-students").addEventListener("click", onAutomatchStudents);
+    $("btn-check-missing-students").addEventListener("click", onCheckMissingStudents);
+    $("missing-students-klasse-filter").addEventListener("change", renderMissingStudentsTable);
+    $("missing-students-klasse-filter").addEventListener("input", renderMissingStudentsTable);
     $("btn-automatch-courses").addEventListener("click", onAutomatchCourses);
     $("btn-compute-preview").addEventListener("click", onComputePreview);
     $("transfer-select-all").addEventListener("change", onTransferSelectAll);

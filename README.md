@@ -40,6 +40,13 @@ vorherige Schritt erledigt ist.
    blendet mit einem Klick alles bis auf "Niedrige Konfidenz" und "Kein Treffer" aus – praktisch, um sich
    bei vielen Zeilen gezielt auf die Fälle zu konzentrieren, die eine manuelle Prüfung brauchen.
    "Alle anzeigen" setzt den Filter zurück.
+4a. **Schüler ohne Forms-Abgabe** (bei Bedarf, über "Prüfen / Aktualisieren"): Listet alle Schild-Schüler
+   aus der in Schritt 2 geladenen Liste auf, denen aktuell keine (nicht-ignorierte) Forms-Zeile zugeordnet
+   ist – Name, Schild-ID und Klasse. In der Kopfzeile der Tabelle lässt sich über ein Auswahlfeld auf eine
+   einzelne Klasse eingrenzen; nach der ersten Auswahl per Maus lässt sich mit den Pfeiltasten hoch/runter
+   klassenweise weiterblättern (Standardverhalten von `<select>`-Feldern in Browsern, kein Zusatzcode
+   nötig). Nützlich z.B., um am Ende einer Umfrage klassenweise nachzuhaken, wer noch nicht abgestimmt
+   hat.
 5. **Abgleich Kurse**: Analog für die Menge der unterschiedlichen Kurswahl-Texte (nicht pro Person,
    sondern einmal pro eindeutigem Text – bei 500 Schüler:innen mit denselben 20 AGs muss man also nur
    20 Zuordnungen treffen, nicht 500). Auch hier lassen sich Werte wie "kein Angebot" oder "Lernzeit"
@@ -138,9 +145,22 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
      Schüler/Kurs-Kombination(en) tatsächlich nicht angelegt werden konnten, statt (wie zuvor) ganze
      50er-Batches inklusive der darin enthaltenen validen Einträge als Verlust auszuweisen.
 
+3. **"Schild-Daten laden" (Schritt 2) schlägt komplett fehl, obwohl vorher alles funktioniert hat** –
+   Fehlermeldung im Browser: CORS-Preflight für `.../klassen/minimal/abschnitt/{id}` schlägt mit
+   Statuscode 500 fehl.
+   Ursache: Für die neue Klassen-Spalte in Schritt 4a wurde `SvwsApi.getKlassen()` zusätzlich per
+   `Promise.all()` zusammen mit Schüler/Kurse/Fächer geladen. Auf mindestens einer SVWS-Server-Instanz
+   gibt genau dieser Endpunkt serverseitig einen 500 auf die CORS-Preflight-Anfrage zurück (ein Problem
+   auf der Server-Seite, nicht am Request des Tools) – `Promise.all()` lässt dadurch den kompletten
+   Schritt scheitern, obwohl Schüler/Kurse/Fächer einzeln betrachtet erfolgreich geladen worden wären.
+   **Fix:** `getKlassen()` wird in `onLoadSchildData()` jetzt in einem eigenen, isolierten `try/catch`
+   aufgerufen statt im gemeinsamen `Promise.all()`. Schlägt es fehl, bleibt die Klassen-Liste einfach leer
+   (Klasse wird in Schritt 4a dann als "–" angezeigt) und es erscheint ein Warnhinweis – der Rest des
+   Schrittes (Schüler, Kurse, Fächer) funktioniert unabhängig davon weiter.
+
 ## Programmstruktur
 
-```
+```text
 SchildKurswahlen/
   index.html                  UI-Grundgerüst des Wizards (7 Abschnitte)
   css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung)
@@ -158,12 +178,13 @@ SchildKurswahlen/
 Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichtigste Funktionen:
 
 | Funktion | Endpunkt | Zweck |
-|---|---|---|
+| --- | --- | --- |
 | `configure({host, schema, username, password})` | – | Baut Basic-Auth-Header, merkt sich Basis-URL |
 | `getStammdaten()` / `getAbschnittId(jahr, abschnitt)` | `GET /schule/stammdaten` | Ermittelt die Abschnitts-ID |
 | `getStatusKatalog()` | `GET /schule/schueler/status` | Katalog der Schüler-Status |
 | `getSchuelerListe(abschnittId)` | `GET /schueler/abschnitt/{id}` | Schülerliste des Abschnitts |
 | `getKurse(abschnittId)` | `GET /kurse/abschnitt/{id}` | Kursliste des Abschnitts |
+| `getKlassen(abschnittId)` | `GET /klassen/minimal/abschnitt/{id}` | Klassenliste des Abschnitts (für Klassen-Kürzel) |
 | `getFaecher()` | `GET /faecher` | Fächerliste |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |

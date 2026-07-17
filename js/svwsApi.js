@@ -99,6 +99,10 @@
     return request("GET", "/faecher");
   }
 
+  async function getKlassen(abschnittId) {
+    return request("GET", `/klassen/minimal/abschnitt/${abschnittId}`);
+  }
+
   async function getLernabschnittsdaten(schuelerId, abschnittId) {
     return request("GET", `/schueler/${schuelerId}/abschnitt/${abschnittId}/lernabschnittsdaten`);
   }
@@ -122,6 +126,7 @@
     getSchuelerListe,
     getKurse,
     getFaecher,
+    getKlassen,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,
