@@ -24,7 +24,10 @@ vorherige Schritt erledigt ist.
    Status, deren Bezeichnung "Aktiv", "Extern" oder "Aufnahme" enthält; das lässt sich über die Checkboxen
    frei anpassen.
 2. **Schild-Daten laden**: Lädt Schüler (gefiltert nach den gewählten Status), Kurse und Fächer des
-   Abschnitts.
+   Abschnitts. Dabei wird auch geprüft, ob zuvor gespeicherte Kurs-Zuordnungen (Schritt 5) noch auf
+   existierende Kurse zeigen – z.B. falls ein Kurs zwischenzeitlich in Schild gelöscht wurde. Nicht mehr
+   auflösbare Zuordnungen werden automatisch entfernt (nicht der Kurs selbst, nur die lokale Zuordnung) und
+   erscheinen danach in Schritt 5 wieder als "kein Treffer" zur Neuzuordnung, mit Hinweis auf die Anzahl.
 3. **Forms-Datei laden**: xlsx-Datei auswählen. Es erscheint eine Vorschau der ersten Zeilen sowie eine
    Spaltenzuordnung: eine Spalte als "Name" markieren, beliebig viele Spalten als "Kurswahl-Spalten"
    (Checkboxen, mit automatischer Vorauswahl anhand einfacher Heuristiken). Jede nicht-leere Zelle einer
@@ -334,6 +337,11 @@ Hält den nicht-persistenten Laufzeitzustand (geladene Schild-Daten, geparste Fo
 Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs der `index.html` mit den obigen
 Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung über
 `Storage.scheduleSave(state)` gesichert.
+
+`pruneStaleKursMatches()`: läuft am Ende von `onLoadSchildData()` (Schritt 2), nachdem `kursById` aus den
+frisch geladenen Schild-Kursen aufgebaut wurde. Entfernt aus `state.kursMatching` alle nicht-ignorierten
+Einträge, deren `targetId` nicht mehr in `kursById` existiert, und meldet die Anzahl im Status-Text von
+Schritt 2. Ignorierte Einträge (keine `targetId`) bleiben unangetastet.
 
 Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
 

@@ -156,6 +156,25 @@
 
   // ---------- 2. Schild-Daten laden ----------
 
+  /**
+   * Entfernt gespeicherte Kurs-Matches (Schritt 5), deren Ziel-Kurs in Schild nicht mehr existiert
+   * (z.B. gelöscht). Läuft nach jedem "Schild-Daten laden", also bevor die Kurs-Match-Tabelle in
+   * Schritt 5 gerendert wird - betroffene Zeilen erscheinen danach wieder als "kein Treffer" und
+   * können neu zugeordnet werden, statt unbemerkt auf einen nicht mehr existierenden Kurs zu zeigen.
+   * Ignorierte Einträge (ohne targetId) bleiben unangetastet.
+   */
+  function pruneStaleKursMatches() {
+    let removed = 0;
+    for (const [key, entry] of Object.entries(state.kursMatching)) {
+      if (entry && !entry.ignored && entry.targetId != null && !kursById.has(entry.targetId)) {
+        delete state.kursMatching[key];
+        removed++;
+      }
+    }
+    if (removed > 0) persist();
+    return removed;
+  }
+
   async function onLoadSchildData() {
     const statusEl = $("schild-data-status");
     setStatus(statusEl, "Lade Schüler, Kurse und Fächer …", "");
@@ -172,6 +191,8 @@
 
       schuelerById = new Map(schildSchueler.map((s) => [s.id, s]));
       kursById = new Map(schildKurse.map((k) => [k.id, k]));
+
+      const entfernteKursMatches = pruneStaleKursMatches();
 
       // Klassen sind nur eine Zusatzinfo für Schritt 4a ("Klasse"-Spalte) - ein Fehler hier soll
       // nicht den ganzen Schritt blockieren, falls dieser Endpunkt auf einem Server mal nicht
@@ -211,7 +232,11 @@
 
       $("schild-data-counts").textContent =
         `${schildSchueler.length} Schüler (gefiltert), ${schildKurse.length} Kurse, ${schildFaecher.length} Fächer, ${schildKlassen.length} Klassen geladen.`;
-      setStatus(statusEl, "Fertig." + klassenHinweis, klassenHinweis ? "warn" : "ok");
+      const pruneHinweis =
+        entfernteKursMatches > 0
+          ? ` ${entfernteKursMatches} gespeicherte Kurs-Zuordnung(en) auf nicht mehr existierende Kurse entfernt.`
+          : "";
+      setStatus(statusEl, "Fertig." + klassenHinweis + pruneHinweis, klassenHinweis || pruneHinweis ? "warn" : "ok");
       reveal("section-forms-import");
       buildDatalists();
       populateCreateKursDialogOptions();
