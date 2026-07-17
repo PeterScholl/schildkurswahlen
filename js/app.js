@@ -1005,6 +1005,11 @@
 
   async function onComputePreview() {
     const statusEl = $("transfer-preview-status");
+    // Cache nur innerhalb EINES Vorschau-Laufs sinnvoll (dedupliziert GETs für Schüler mit mehreren
+    // Kurswahlen). Über den Lauf hinaus aufzuheben würde nach einer Übertragung veraltete Daten liefern -
+    // frisch angelegte Leistungsdaten würden dann bei einer erneuten Vorschau wieder als "neu" erscheinen,
+    // obwohl sie schon existieren, und der Klick auf "Vorschau berechnen" wirkt dadurch wirkungslos.
+    lernabschnittsdatenCache.clear();
     commitVisibleMatches();
     const { pairs, duplicates } = collectMatchedPairs();
     if (pairs.length === 0) {

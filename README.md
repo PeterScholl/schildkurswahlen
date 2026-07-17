@@ -230,6 +230,17 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
      künftige Server-Fehler dieser Art direkt im Fehlertext sichtbar, ohne dass jeder Einzelfall im Code
      abgefangen werden muss.
 
+5. **"Vorschau berechnen" (Schritt 6) zeigt nach einer Übertragung scheinbar keine Veränderung**, obwohl
+   sich der Datenbestand in Schild inzwischen geändert hat (z.B. weil eine vorherige Übertragung
+   tatsächlich erfolgreich war, siehe unten).
+   Ursache: `lernabschnittsdatenCache` (Map schuelerId -> Lernabschnittsdaten-Promise) wurde als
+   Modul-Variable nie geleert und blieb über mehrere Klicks auf "Vorschau berechnen" hinweg bestehen. Der
+   Cache war ursprünglich nur dafür gedacht, innerhalb *eines* Vorschau-Laufs doppelte GET-Anfragen für
+   Schüler:innen mit mehreren Kurswahlen zu vermeiden - blieb er aber über den Lauf hinaus erhalten, lieferte
+   ein erneuter Klick auf "Vorschau berechnen" denselben (veralteten) Datenstand wie beim letzten Mal,
+   unabhängig davon, was sich in der Zwischenzeit in Schild geändert hatte.
+   **Fix:** `onComputePreview()` (`js/app.js`) leert `lernabschnittsdatenCache` jetzt zu Beginn jedes Laufs.
+
 ## Programmstruktur
 
 ```text
