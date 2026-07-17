@@ -324,13 +324,14 @@
     }
   }
 
-  /** Extrahiert Auswahl/Kurstexte (inkl. Spaltenkürzel) neu und rendert die davon abhängigen
-   *  Tabellen (Schritt 4 + 5) neu. Wird nach jeder Änderung an Spaltenzuordnung oder
-   *  Spaltenkürzeln aufgerufen. */
+  /** Extrahiert Auswahl/Kurstexte (inkl. Kurs-Rewrite-Split und Spaltenkürzel) neu und rendert die davon
+   *  abhängigen Tabellen (Schritt 4 + 5) neu. Wird nach jeder Änderung an Spaltenzuordnung, Kurs-Rewrite
+   *  oder Spaltenkürzeln aufgerufen. */
   function recomputeSelectionsAndRender() {
     const selections = FormsImport.extractSelections(formsParsed, {
       ...state.columnMapping,
       columnPrefixes: state.columnPrefixes,
+      splitDelimiter: state.courseSplitDelimiter,
     });
     studentEntries = groupSelectionsByName(selections);
     distinctCourseTexts = FormsImport.distinctCourseTexts(selections);
@@ -359,12 +360,33 @@
       "ok"
     );
 
+    renderCourseSplitEditor();
     renderColumnPrefixEditor();
+    reveal("section-course-rewrite");
     reveal("section-column-prefixes");
     reveal("section-student-matching");
     reveal("section-missing-students");
     reveal("section-course-matching");
     reveal("section-transfer");
+  }
+
+  /** Zeigt das aktuell gespeicherte Trennzeichen an, oder - falls noch keines gesetzt wurde - den
+   *  Vorschlag "+" (rein als Anzeige-Hilfe; wirksam wird er erst nach Klick auf "Übernehmen"). */
+  function renderCourseSplitEditor() {
+    $("course-split-delimiter").value = state.courseSplitDelimiter || FormsImport.DEFAULT_SPLIT_DELIMITER;
+  }
+
+  function onApplyCourseSplit() {
+    state.courseSplitDelimiter = $("course-split-delimiter").value.trim();
+    persist();
+    recomputeSelectionsAndRender();
+    setStatus(
+      $("course-split-status"),
+      state.courseSplitDelimiter
+        ? `Split aktiv bei "${state.courseSplitDelimiter}" – ${distinctCourseTexts.length} unterschiedliche Kurswahl-Texte.`
+        : `Split deaktiviert – ${distinctCourseTexts.length} unterschiedliche Kurswahl-Texte.`,
+      "ok"
+    );
   }
 
   function renderColumnPrefixEditor() {
@@ -1178,6 +1200,7 @@
     $("btn-load-schild-data").addEventListener("click", onLoadSchildData);
     $("forms-file-input").addEventListener("change", onFormsFileSelected);
     $("btn-apply-mapping").addEventListener("click", onApplyMapping);
+    $("btn-apply-course-split").addEventListener("click", onApplyCourseSplit);
     $("btn-apply-column-prefixes").addEventListener("click", onApplyColumnPrefixes);
     $("btn-automatch-students").addEventListener("click", onAutomatchStudents);
     $("btn-save-student-matches").addEventListener("click", onSaveStudentMatches);

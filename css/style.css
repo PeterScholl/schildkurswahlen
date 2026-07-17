@@ -277,3 +277,12 @@ dialog#create-kurs-dialog .grid-form { grid-template-columns: 1fr; }
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
+
+#section-course-rewrite label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  max-width: 8rem;
+  margin-bottom: 0.75rem;
+}

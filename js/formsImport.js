@@ -57,29 +57,49 @@
     return `S${colIdx + 1}`;
   }
 
+  const DEFAULT_SPLIT_DELIMITER = "+";
+
+  /**
+   * Zerlegt einen Zellwert am `delimiter` in mehrere einzelne Kurswahlen (z.B. "Lernzeit + ELSA" mit
+   * Trennzeichen "+" -> ["Lernzeit", "ELSA"]). Leeres/undefiniertes Trennzeichen -> Wert unverändert als
+   * einzelnes Element. Leere Teile (z.B. durch mehrfaches Trennzeichen) werden verworfen.
+   */
+  function splitCourseValue(value, delimiter) {
+    const d = String(delimiter ?? "").trim();
+    if (!d) return [value];
+    return value
+      .split(d)
+      .map((part) => part.trim())
+      .filter((part) => part !== "");
+  }
+
   /**
    * Extrahiert pro Zeile den Namen und die Menge der nicht-leeren Kurswahl-Spaltenwerte.
-   * Ist für eine Spalte ein Kürzel in `mapping.columnPrefixes` hinterlegt (Schlüssel = Spaltenindex
-   * als String), wird es dem Zellwert vorangestellt - so lässt sich z.B. "Rudern" aus Spalte 7 beim
-   * Matching von "Rudern" aus Spalte 9 unterscheiden (unterschiedliche Kürzel) oder bewusst
-   * zusammenfassen (gleiches Kürzel). Ein leeres Kürzel lässt den Wert unverändert.
+   * Ist `mapping.splitDelimiter` gesetzt, wird jeder Zellwert zunächst daran in mehrere Kurswahlen
+   * aufgesplittet (Schritt 3a "Kurs-Rewrite", z.B. "Lernzeit + ELSA" -> "Lernzeit" und "ELSA" als zwei
+   * getrennte Wahlen). Ist für eine Spalte ein Kürzel in `mapping.columnPrefixes` hinterlegt (Schlüssel =
+   * Spaltenindex als String), wird es anschließend jedem (Split-)Teil vorangestellt - so lässt sich z.B.
+   * "Rudern" aus Spalte 7 beim Matching von "Rudern" aus Spalte 9 unterscheiden (unterschiedliche Kürzel)
+   * oder bewusst zusammenfassen (gleiches Kürzel). Ein leeres Kürzel lässt den Wert unverändert.
    * @returns {{formsName: string, courses: string[], rowIndex: number}[]}
    */
   function extractSelections(parsed, mapping) {
     const { rows } = parsed;
-    const { nameCol, courseCols, columnPrefixes = {} } = mapping;
+    const { nameCol, courseCols, columnPrefixes = {}, splitDelimiter = "" } = mapping;
     return rows.map((row, rowIndex) => {
       const formsName = nameCol != null ? String(row[nameCol] ?? "").trim() : "";
       const seen = new Set();
       const courses = [];
       for (const colIdx of courseCols) {
-        const value = String(row[colIdx] ?? "").trim();
-        if (value === "") continue;
+        const rawValue = String(row[colIdx] ?? "").trim();
+        if (rawValue === "") continue;
         const prefix = (columnPrefixes[String(colIdx)] ?? "").trim();
-        const finalValue = prefix ? `${prefix} ${value}` : value;
-        if (seen.has(finalValue)) continue;
-        seen.add(finalValue);
-        courses.push(finalValue);
+        for (const part of splitCourseValue(rawValue, splitDelimiter)) {
+          const finalValue = prefix ? `${prefix} ${part}` : part;
+          if (seen.has(finalValue)) continue;
+          seen.add(finalValue);
+          courses.push(finalValue);
+        }
       }
       return { formsName, courses, rowIndex };
     });
@@ -114,6 +134,8 @@
     distinctCourseTexts,
     defaultColumnPrefix,
     stripKnownPrefix,
+    splitCourseValue,
+    DEFAULT_SPLIT_DELIMITER,
     METADATA_HEADERS,
   };
 })(window);

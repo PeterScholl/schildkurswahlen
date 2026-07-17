@@ -29,13 +29,21 @@ vorherige Schritt erledigt ist.
    Spaltenzuordnung: eine Spalte als "Name" markieren, beliebig viele Spalten als "Kurswahl-Spalten"
    (Checkboxen, mit automatischer Vorauswahl anhand einfacher Heuristiken). Jede nicht-leere Zelle einer
    gewählten Kurswahl-Spalte zählt als eine Kurswahl der jeweiligen Person.
-3a. **Spaltenkürzel für Kurswahl-Spalten**: Jede Kurswahl-Spalte bekommt ein Kürzel (Standard:
+3a. **Kurs-Rewrite**: Manche Forms-Antworten kombinieren mehrere Wahlen in einer Zelle (z.B.
+   "Lernzeit + ELSA" – kommt in der Beispieldatei tatsächlich so vor). Über ein Trennzeichen (Vorschlag
+   "+") lässt sich eine solche Zelle in mehrere einzelne Kurswahlen aufsplitten, die danach unabhängig
+   voneinander in Schritt 5 gematcht und in Schritt 6 als getrennte Leistungsdaten-Einträge angelegt
+   werden – aus "Lernzeit + ELSA" werden dann "Lernzeit" *und* "ELSA". Das Trennzeichen gilt für alle
+   Kurswahl-Spalten gleichermaßen; Feld leeren, um nicht zu splitten (Standardzustand, muss aktiv über
+   "Übernehmen" gesetzt werden). Der Split passiert *vor* dem Voranstellen des Spaltenkürzels aus 3b, d.h.
+   aus Spalte 9 werden bei aktivem Split z.B. "S9 Lernzeit" und "S9 ELSA".
+3b. **Spaltenkürzel für Kurswahl-Spalten**: Jede Kurswahl-Spalte bekommt ein Kürzel (Standard:
    `S<Spaltennummer>`, z.B. `S7`), das dem Kurstext beim Matching vorangestellt wird. Damit lässt sich
    z.B. "Rudern" aus Spalte 7 einem anderen Schild-Kurs zuordnen als "Rudern" aus Spalte 9 (unterschiedliche
    Kürzel), oder bewusst zusammenfassen (gleiches Kürzel für beide Spalten – z.B. wenn zwei Spalten
    tatsächlich denselben Kurs meinen). Ein leeres Kürzel-Feld lässt den Text unverändert wie bisher. Über
    "Kürzel übernehmen" werden die Kurswahl-Texte (und damit die Tabellen in Schritt 4/5) mit den neuen
-   Kürzeln neu berechnet. Die Kürzel werden persistiert (localStorage + JSON-Export).
+   Kürzeln neu berechnet. Kürzel und Trennzeichen werden persistiert (localStorage + JSON-Export).
 4. **Abgleich Schüler**: Pro erkanntem Forms-Namen wird automatisch der ähnlichste Schild-Schüler
    vorgeschlagen (mit Konfidenz-Prozentwert). Über "Automatisch matchen" werden alle Vorschläge mit hoher
    Sicherheit sofort fest übernommen; unsichere Fälle bleiben zur manuellen Kontrolle stehen. Die
@@ -65,7 +73,7 @@ vorherige Schritt erledigt ist.
    20 Zuordnungen treffen, nicht 500). Auch hier lassen sich Werte wie "kein Angebot" oder "Lernzeit"
    bewusst ignorieren, falls sie keinem echten Schild-Kurs entsprechen. Dieselben Status-Filter und der
    "Nur unsichere anzeigen"-Button stehen auch hier zur Verfügung.
-   Das Spalten-Kürzel aus Schritt 3a (z.B. "S9") bleibt zwar Teil des Textes, mit dem der Eintrag in der
+   Das Spalten-Kürzel aus Schritt 3b (z.B. "S9") bleibt zwar Teil des Textes, mit dem der Eintrag in der
    Tabelle identifiziert wird, fließt aber **nicht** in die Ähnlichkeitssuche nach einem passenden
    Schild-Kurs ein – gesucht wird nur mit dem eigentlichen Kurstext ohne Kürzel, da das Kürzel ja keine
    Bedeutung für die Kursbezeichnung hat und die Trefferqualität sonst unnötig verschlechtern würde.
@@ -265,10 +273,14 @@ Server-Rückmeldung aus dem Antwort-Body an (JSON oder Klartext, je nachdem was 
 - `suggestColumnMapping(headers, rows)` schlägt Namens-/Kurswahl-Spalten anhand einfacher Heuristiken vor
   (Metadaten-Spalten wie ID/Zeitstempel werden ausgeschlossen, Spalten mit überwiegend kurzen Texten ohne
   Zahlen/Datumswerte werden vorgeschlagen).
-- `extractSelections(parsed, mapping)` liefert pro Zeile `{formsName, courses[]}`. `mapping.columnPrefixes`
-  (Spaltenindex als String -> Kürzel) wird dabei jedem Zellwert vorangestellt, sofern für die Spalte ein
-  nicht-leeres Kürzel hinterlegt ist (siehe Schritt 3a).
+- `extractSelections(parsed, mapping)` liefert pro Zeile `{formsName, courses[]}`. Pro Zellwert wird
+  zunächst `mapping.splitDelimiter` angewendet (Schritt 3a - ein Zellwert kann so zu mehreren Einträgen in
+  `courses[]` werden), danach `mapping.columnPrefixes` (Spaltenindex als String -> Kürzel, Schritt 3b)
+  jedem resultierenden Teil vorangestellt, sofern für die Spalte ein nicht-leeres Kürzel hinterlegt ist.
 - `distinctCourseTexts(selections)` liefert die Menge aller unterschiedlichen Kurswahl-Texte.
+- `splitCourseValue(value, delimiter)` zerlegt einen Zellwert am Trennzeichen in mehrere Teile (leeres
+  Trennzeichen -> Wert unverändert als einzelnes Element); `DEFAULT_SPLIT_DELIMITER` ("+") ist der in der
+  UI vorgeschlagene Default.
 - `defaultColumnPrefix(colIdx)` liefert das Standard-Kürzel `S<Spaltennummer>` (1-indiziert) für eine
   Kurswahl-Spalte.
 - `stripKnownPrefix(text, columnPrefixes)` entfernt ein bekanntes Spalten-Kürzel samt Leerzeichen vom
@@ -305,13 +317,17 @@ Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs der `index.ht
 Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung über
 `Storage.scheduleSave(state)` gesichert.
 
-Funktionen rund um Schritt 3a (Spaltenkürzel):
+Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
 
+- `onApplyCourseSplit()`: übernimmt das Trennzeichen-Feld nach `state.courseSplitDelimiter` und
+  berechnet die Kurswahl-Texte neu. `renderCourseSplitEditor()` zeigt den gespeicherten Wert an bzw.
+  schlägt `FormsImport.DEFAULT_SPLIT_DELIMITER` vor, solange noch nichts gespeichert wurde.
 - `ensureDefaultColumnPrefixes(courseCols)`: setzt für neue Kurswahl-Spalten das Standard-Kürzel
   `S<Spaltennummer>`; bereits vergebene (auch bewusst geleerte) Kürzel bleiben unangetastet.
 - `recomputeSelectionsAndRender()`: ruft `FormsImport.extractSelections()` mit der aktuellen
-  Spaltenzuordnung *und* den aktuellen Kürzeln neu auf und rendert Schritt 4 + 5 neu. Wird sowohl nach
-  "Auswahl übernehmen" (Schritt 3) als auch nach "Kürzel übernehmen" (Schritt 3a) aufgerufen.
+  Spaltenzuordnung, dem aktuellen Split-Trennzeichen *und* den aktuellen Kürzeln neu auf und rendert
+  Schritt 4 + 5 neu. Wird nach "Auswahl übernehmen" (Schritt 3), "Übernehmen" (Schritt 3a) und "Kürzel
+  übernehmen" (Schritt 3b) aufgerufen.
 
 Funktionen rund um den "Neuen Kurs anlegen"-Dialog in Schritt 5:
 

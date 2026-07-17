@@ -78,8 +78,24 @@
   </div>
 </section>
 
+<section id="section-course-rewrite" class="card hidden">
+  <h2>3a. Kurs-Rewrite</h2>
+  <p class="hint">
+    Manche Forms-Antworten kombinieren mehrere Wahlen in einer Zelle (z.B. "Lernzeit + ELSA"). Über ein
+    Trennzeichen lässt sich eine solche Zelle in mehrere einzelne Kurswahlen aufsplitten, die danach
+    unabhängig voneinander gematcht und übertragen werden – aus "Lernzeit + ELSA" werden dann z.B. zwei
+    getrennte Wahlen "Lernzeit" und "ELSA". Gilt für alle Kurswahl-Spalten gleichermaßen. Trennzeichen-Feld
+    leeren, um nicht zu splitten (Standardzustand).
+  </p>
+  <label>Trennzeichen
+    <input type="text" id="course-split-delimiter" placeholder="z.B. +" />
+  </label>
+  <button id="btn-apply-course-split">Übernehmen</button>
+  <span id="course-split-status" class="status-msg"></span>
+</section>
+
 <section id="section-column-prefixes" class="card hidden">
-  <h2>3a. Spaltenkürzel für Kurswahl-Spalten</h2>
+  <h2>3b. Spaltenkürzel für Kurswahl-Spalten</h2>
   <p class="hint">
     Jeder Kurswahl-Spalte kann ein Kürzel vorangestellt werden, das beim Matching dem gewählten
     Kurstext vorangestellt wird (Standard: S&lt;Spaltennummer&gt;). So lässt sich z.B. "Rudern" aus
