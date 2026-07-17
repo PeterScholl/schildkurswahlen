@@ -136,6 +136,32 @@ vorherige Schritt erledigt ist.
    markierten Leistungsdaten-Einträge dauerhaft aus Schild entfernen. Weitere Kontrollen lassen sich über
    `js/check.js` ergänzen.
 
+   **"Split in Jahrgangskurse"**: verschiebt Schüler:innen eines Jahrgangs aus einem gemeinsam angelegten
+   Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
+   jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
+   Zielkurs) definiert die gewünschten Verschiebungen:
+   - **Quellkurs**/**Zielkurs**: Autocomplete-Felder wie in Schritt 4/5, zeigen zusätzlich die aktuelle
+     Schülerzahl je Kurs in Klammern an (z.B. "AGGT-Robotik (23)").
+   - **Zielkurs, der noch nicht existiert**: einfach ein neues Kürzel eintippen (nicht aus der Liste
+     wählen) – beim Ausführen wird der Kurs automatisch angelegt, mit Fach/Kursart/Wochenstunden vom
+     Quellkurs übernommen und dem Jahrgang dieser Zeile als einzigem zugeordneten Jahrgang (präziser als
+     die generische Jahrgangs-Vorbelegung im "Neuen Kurs anlegen"-Dialog aus Schritt 5, da hier ja schon
+     bekannt ist, für welchen Jahrgang der Kurs gedacht ist).
+   - **"+ Jahrgang"**: fügt direkt unter der Zeile eine neue Zeile mit demselben Quellkurs ein, um einen
+     Kurs bequem auf mehrere Jahrgänge/Zielkurse aufzuteilen, ohne den Quellkurs erneut auswählen zu müssen.
+   - **"Split durchführen"**: verarbeitet alle vollständig ausgefüllten Zeilen nacheinander (mit
+     Fortschrittsbalken). Pro Zeile werden alle Schüler:innen des Quellkurses ermittelt, die dem gewählten
+     Jahrgang angehören; für jede Person wird geprüft, ob sie den Zielkurs schon hat (dann keine Dopplung)
+     – in jedem Fall wird sie aber aus dem Quellkurs entfernt. Noten-/Zeugnisrelevante Felder
+     (Note, "auf Zeugnis", Bemerkungstext, Epochal-Kennzeichen) werden beim Verschieben vom
+     Quell-Leistungsdaten-Eintrag übernommen, Kursart/Wochenstunden/Kursleitung kommen vom Zielkurs.
+     **Sicherheitsgarantie:** Schlägt das Anlegen im Zielkurs für eine Person fehl, wird ihr
+     Quellkurs-Eintrag *nicht* gelöscht – so kann niemand eine Fachbelegung komplett verlieren, nur weil
+     ein einzelner Schreibvorgang scheitert (isoliert getestet, siehe "Fehlerbehebungen" unten).
+
+   *"Split in Klassenkurse" (analog, aber nach Klasse statt Jahrgang gruppiert) ist als nächster Schritt
+   geplant, sobald sich die Jahrgangs-Variante im Einsatz bewährt hat.*
+
 ## Wichtige Entscheidungen
 
 - **Generischer Spalten-Picker statt Speziallogik**: Die Beispiel-Forms-Datei hat pro Wochentag mehrere
@@ -443,6 +469,29 @@ Funktionen rund um Schritt 8 (Nachbereitung):
 - `onDeleteCheckLeererKurs()`: fragt vor dem Löschen per `confirm()` nach, ruft dann
   `SvwsApi.deleteLeistungsdatenMultiple()` mit den ausgewählten IDs auf und entfernt erfolgreich gelöschte
   Zeilen aus der Tabelle.
+- `batchWithBisection(items, apiCall)`: generische Verallgemeinerung des früheren
+  `createBatchWithBisection()` (siehe Fehlerbehebung Nr. 2) - funktioniert für beliebige Batch-Aufrufe
+  (Anlegen *und* Löschen), nicht nur für Leistungsdaten-Erstellung. `items` müssen keine fertigen Payloads
+  sein; `apiCall` entscheidet, was daraus gesendet wird, `failed[].item` bleibt die Original-Referenz.
+  Wird von `onExecuteTransfer()`, `onDeleteCheckLeererKurs()` und `onExecuteSplitJahrgang()` genutzt.
+
+Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
+
+- `renderSplitJahrgangTable()` / `onSplitJahrgangAddRow()` / `onSplitJahrgangAddBelow()` /
+  `onSplitJahrgangRemoveRow()`: verwalten `state.splitJahrgangRows` (persistiert) und deren Darstellung.
+  Delegierte Change-/Click-Handler am statischen `#split-jahrgang-table`-Element bedienen alle Zeilen,
+  ohne nach jedem Re-Render neu verdrahtet werden zu müssen.
+- `resolveOrCreateZielkurs(row, quellkurs, jahrgang, log)`: löst das Zielkurs-Feld auf (bekannter Kurs per
+  `[id]`-Suffix) oder legt bei unbekanntem Text automatisch einen neuen Kurs an (`SvwsApi.createKurs()`,
+  Fach/Kursart/Wochenstunden vom Quellkurs, `idJahrgaenge: [jahrgang.id]`).
+- `buildSplitLeistungsdatenPayload(quellEintrag, zielkurs)`: baut den Leistungsdaten-Payload für den
+  Zielkurs - Noten-/Zeugnisfelder vom Quelleintrag, Kursart/Wochenstunden/Kursleitung vom Zielkurs.
+- `onExecuteSplitJahrgang()`: verarbeitet alle vollständigen Zeilen sequenziell. Pro Zeile: Kandidaten
+  über `schuelerById.get(s.id).idJahrgang` filtern, Lernabschnittsdaten konkurrenzbegrenzt laden, für
+  jede Person Anlegen-im-Ziel (falls nötig) und Löschen-aus-Quelle über `batchWithBisection()` ausführen.
+  Wichtig: Die zum Löschen vorgesehene Menge wird aus den *erfolgreichen* Anlege-Operationen abgeleitet
+  (`fehlgeschlageneOps`-Set über Objektreferenzen aus `createResult.failed`), damit ein fehlgeschlagenes
+  Anlegen niemals zu einem gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
 
 ## Bekannte Grenzen / mögliche Erweiterungen
 
@@ -454,3 +503,10 @@ Funktionen rund um Schritt 8 (Nachbereitung):
   nicht enthalten.
 - Kein automatisierter Test-Runner; die Kernlogik (`formsImport.js`, `matching.js`) wurde während der
   Entwicklung über Node-Skripte gegen die echte Beispieldatei sowie synthetische Schild-Daten geprüft.
+- "Split in Klassenkurse" (analog zu "Split in Jahrgangskurse", aber nach Klasse statt Jahrgang gruppiert)
+  ist noch nicht umgesetzt, bewusst als nächster Schritt zurückgestellt.
+- "Split in Jahrgangskurse" arbeitet mit dem Datenstand aus dem letzten "Schild-Daten laden" (Schritt 2);
+  wer mehrere Split-Durchläufe hintereinander macht, sollte zwischendurch neu laden, damit Schülerzahlen
+  in den Datalist-Vorschlägen aktuell bleiben (die eigentliche Verschiebe-Logik selbst holt pro Zeile
+  frische Lernabschnittsdaten und ist dadurch auch ohne Neuladen korrekt, nur die angezeigten Zahlen in
+  Klammern könnten veraltet sein).

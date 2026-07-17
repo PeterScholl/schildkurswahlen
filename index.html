@@ -304,6 +304,36 @@
   </div>
   <button id="btn-delete-check-leerer-kurs" class="btn-danger" disabled>Ausgewählte löschen</button>
   <div id="check-leerer-kurs-log" class="log"></div>
+
+  <h3>Split in Jahrgangskurse</h3>
+  <p class="hint">
+    Verschiebt Schüler:innen eines Jahrgangs von einem Quellkurs in einen Zielkurs (z.B. um einen
+    gemeinsam angelegten Kurs nachträglich nach Jahrgängen aufzuteilen). Existiert der Zielkurs noch nicht,
+    wird er beim Ausführen automatisch angelegt (Fach, Kursart und Wochenstunden vom Quellkurs übernommen,
+    Jahrgang auf die Zeile beschränkt) – dazu einfach ein noch nicht existierendes Kürzel eintippen.
+    Bereits im Zielkurs vorhandene Schüler:innen werden nicht doppelt angelegt, aber trotzdem aus dem
+    Quellkurs entfernt. Über "+ Jahrgang" lässt sich zu einer Zeile schnell eine weitere Zeile mit
+    demselben Quellkurs anlegen, um einen Kurs auf mehrere Jahrgänge/Zielkurse aufzuteilen.
+  </p>
+  <div class="table-scroll">
+    <table id="split-jahrgang-table">
+      <thead>
+        <tr>
+          <th>Quellkurs</th>
+          <th>Jahrgang</th>
+          <th>Zielkurs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" class="btn-secondary" id="btn-split-jahrgang-add-row">+ Zeile hinzufügen</button>
+  <button id="btn-split-jahrgang-execute">Split durchführen</button>
+  <span id="split-jahrgang-status" class="status-msg"></span>
+  <progress id="split-jahrgang-progress" class="progress-bar hidden" value="0" max="100"></progress>
+  <div id="split-jahrgang-log" class="log"></div>
+  <datalist id="kurs-datalist-anzahl"></datalist>
 </section>
 
 </main>

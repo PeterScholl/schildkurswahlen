@@ -62,6 +62,14 @@
     return `${k.kuerzel}${zeugnis} [${k.id}]`;
   }
 
+  /** Wie kursLabel(), aber mit Schülerzahl in Klammern (für Schritt 8 "Split in Jahrgangskurse") -
+   *  die Zahl kommt aus dem eingebetteten `schueler[]`-Array der zuletzt geladenen Kursdaten. */
+  function kursLabelMitAnzahl(k) {
+    const zeugnis = k.bezeichnungZeugnis ? ` – ${k.bezeichnungZeugnis}` : "";
+    const anzahl = (k.schueler || []).length;
+    return `${k.kuerzel}${zeugnis} (${anzahl}) [${k.id}]`;
+  }
+
   /** Extrahiert die in eckigen Klammern kodierte ID aus einem Datalist-Label. */
   function idFromLabel(label) {
     const m = /\[(\d+)\]\s*$/.exec(label || "");
@@ -241,6 +249,7 @@
       reveal("section-nachbereitung");
       buildDatalists();
       populateCreateKursDialogOptions();
+      renderSplitJahrgangTable();
     } catch (err) {
       setStatus(statusEl, err.message, "error");
     }
@@ -307,6 +316,15 @@
       opt.value = label;
       kursDatalist.appendChild(opt);
     }
+
+    buildKursDatalistMitAnzahl();
+  }
+
+  /** Separate Datalist mit Schülerzahl je Kurs (für Schritt 8 "Split in Jahrgangskurse"), aus
+   *  buildDatalists() ausgelagert, da sie nach jedem Kurs-Neuanlegen einzeln neu aufgebaut werden muss. */
+  function buildKursDatalistMitAnzahl() {
+    const datalist = $("kurs-datalist-anzahl");
+    datalist.innerHTML = schildKurse.map((k) => `<option value="${escapeHtml(kursLabelMitAnzahl(k))}"></option>`).join("");
   }
 
   // ---------- 3. Forms-Datei laden ----------
@@ -1161,25 +1179,27 @@
   }
 
   /**
-   * Legt `rows` als Batch an. Der SVWS-Server beantwortet einen Batch offenbar transaktional:
-   * Enthält er auch nur einen ungültigen Datensatz (z.B. Dopplung, die trotz Deduplizierung
-   * durch einen abweichenden Datenstand entstanden ist), schlägt der GESAMTE Batch mit 500 fehl
-   * - auch die 49 unproblematischen Einträge. Um das nicht auf Kosten gültiger Einträge gehen zu
-   * lassen, wird ein fehlgeschlagener Batch bei einem Fehler rekursiv halbiert, bis entweder ein
-   * Teil-Batch durchgeht oder der/die einzelne(n) problematische(n) Datensätze isoliert sind.
+   * Führt `apiCall(items)` aus (typischerweise ein Batch-Create/-Delete). Der SVWS-Server beantwortet
+   * einen Batch offenbar transaktional: Enthält er auch nur einen ungültigen Datensatz (z.B. eine
+   * Dopplung), schlägt der GESAMTE Batch mit 500 fehl - auch die unproblematischen Einträge. Um das
+   * nicht auf Kosten gültiger Einträge gehen zu lassen, wird ein fehlgeschlagener Batch bei einem Fehler
+   * rekursiv halbiert, bis entweder ein Teil-Batch durchgeht oder der/die einzelne(n) problematische(n)
+   * Einträge isoliert sind. `items` können beliebige Objekte sein (nicht nur fertige Payloads) - `apiCall`
+   * entscheidet, wie daraus der eigentliche Request-Body wird; `failed[].item` bleibt dabei die
+   * ursprüngliche Objektreferenz, damit der Aufrufer sie z.B. für Folgeaktionen wiedererkennen kann.
    */
-  async function createBatchWithBisection(rows) {
-    if (rows.length === 0) return { ok: 0, failed: [] };
+  async function batchWithBisection(items, apiCall) {
+    if (items.length === 0) return { ok: 0, failed: [] };
     try {
-      await SvwsApi.createLeistungsdatenMultiple(rows.map(buildLeistungsdatenPayload));
-      return { ok: rows.length, failed: [] };
+      await apiCall(items);
+      return { ok: items.length, failed: [] };
     } catch (err) {
-      if (rows.length === 1) {
-        return { ok: 0, failed: [{ row: rows[0], message: err.message }] };
+      if (items.length === 1) {
+        return { ok: 0, failed: [{ item: items[0], message: err.message }] };
       }
-      const mid = Math.ceil(rows.length / 2);
-      const left = await createBatchWithBisection(rows.slice(0, mid));
-      const right = await createBatchWithBisection(rows.slice(mid));
+      const mid = Math.ceil(items.length / 2);
+      const left = await batchWithBisection(items.slice(0, mid), apiCall);
+      const right = await batchWithBisection(items.slice(mid), apiCall);
       return { ok: left.ok + right.ok, failed: [...left.failed, ...right.failed] };
     }
   }
@@ -1203,7 +1223,9 @@
     for (let i = 0; i < toSend.length; i += batchSize) {
       const batch = toSend.slice(i, i + batchSize);
       const batchNum = i / batchSize + 1;
-      const result = await createBatchWithBisection(batch);
+      const result = await batchWithBisection(batch, (subset) =>
+        SvwsApi.createLeistungsdatenMultiple(subset.map(buildLeistungsdatenPayload))
+      );
       ok += result.ok;
       failedRows.push(...result.failed);
       log.textContent +=
@@ -1216,7 +1238,7 @@
     if (failedRows.length > 0) {
       log.textContent += `\nFehlgeschlagene Einträge im Detail:\n`;
       for (const f of failedRows) {
-        log.textContent += `- ${f.row.schuelerLabel} / ${f.row.kursLabel}: ${f.message}\n`;
+        log.textContent += `- ${f.item.schuelerLabel} / ${f.item.kursLabel}: ${f.message}\n`;
       }
     }
     log.textContent += `\nFertig: ${ok} erfolgreich, ${failedRows.length} fehlgeschlagen.\n`;
@@ -1350,19 +1372,283 @@
     const log = $("check-leerer-kurs-log");
     log.textContent = `Lösche ${ids.length} Leistungsdaten-Einträge …\n`;
     $("btn-delete-check-leerer-kurs").disabled = true;
-    try {
-      await SvwsApi.deleteLeistungsdatenMultiple(ids);
-      const idSet = new Set(ids);
-      checkLeererKursResults = checkLeererKursResults.filter((r) => !idSet.has(r.leistungsdatenId));
-      renderCheckLeererKursTable();
-      log.textContent += `${ids.length} Einträge erfolgreich gelöscht.\n`;
-      setStatus($("check-leerer-kurs-status"), `${ids.length} Einträge gelöscht.`, "ok");
-    } catch (err) {
-      log.textContent += `FEHLER – ${err.message}\n`;
-      setStatus($("check-leerer-kurs-status"), "Löschen fehlgeschlagen, siehe Protokoll.", "error");
-    } finally {
-      $("btn-delete-check-leerer-kurs").disabled = checkLeererKursResults.length === 0;
+
+    const result = await batchWithBisection(ids, (subset) => SvwsApi.deleteLeistungsdatenMultiple(subset));
+    const geloeschtIds = new Set(ids.filter((id) => !result.failed.some((f) => f.item === id)));
+    checkLeererKursResults = checkLeererKursResults.filter((r) => !geloeschtIds.has(r.leistungsdatenId));
+    renderCheckLeererKursTable();
+
+    if (result.failed.length === 0) {
+      log.textContent += `${result.ok} Einträge erfolgreich gelöscht.\n`;
+      setStatus($("check-leerer-kurs-status"), `${result.ok} Einträge gelöscht.`, "ok");
+    } else {
+      log.textContent += `${result.ok} gelöscht, ${result.failed.length} fehlgeschlagen:\n`;
+      for (const f of result.failed) log.textContent += `- Leistungsdaten-ID ${f.item}: ${f.message}\n`;
+      setStatus($("check-leerer-kurs-status"), `${result.ok} gelöscht, ${result.failed.length} fehlgeschlagen.`, "warn");
     }
+    $("btn-delete-check-leerer-kurs").disabled = checkLeererKursResults.length === 0;
+  }
+
+  // ---------- 8b. Split in Jahrgangskurse ----------
+
+  function jahrgangOptionsHtml(selectedId) {
+    const optionen = ['<option value="">(wählen)</option>'].concat(
+      schildJahrgaenge.map((j) => {
+        const label = j.kuerzel || j.kuerzelStatistik || `#${j.id}`;
+        return `<option value="${j.id}" ${j.id === selectedId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      })
+    );
+    return optionen.join("");
+  }
+
+  function renderSplitJahrgangTable() {
+    const tbody = document.querySelector("#split-jahrgang-table tbody");
+    tbody.innerHTML = state.splitJahrgangRows
+      .map((row, idx) => {
+        const quellkurs = row.quellkursId != null ? kursById.get(row.quellkursId) : null;
+        const quellkursValue = quellkurs ? kursLabelMitAnzahl(quellkurs) : "";
+        return `
+        <tr data-row-idx="${idx}">
+          <td><input type="text" class="split-quellkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(quellkursValue)}" placeholder="Kurs wählen" /></td>
+          <td><select class="split-jahrgang-select">${jahrgangOptionsHtml(row.jahrgangId)}</select></td>
+          <td><input type="text" class="split-zielkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(row.zielkursText || "")}" placeholder="Kürzel (neu oder vorhanden)" /></td>
+          <td class="row-actions">
+            <button type="button" class="btn-secondary split-add-below">+ Jahrgang</button>
+            <button type="button" class="btn-secondary split-remove-row">✕</button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  function splitJahrgangRowIndex(evt) {
+    return Number(evt.target.closest("tr").dataset.rowIdx);
+  }
+
+  function onSplitJahrgangQuellkursChange(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    const id = idFromLabel(evt.target.value.trim());
+    state.splitJahrgangRows[idx].quellkursId = id != null && kursById.has(id) ? id : null;
+    persist();
+    renderSplitJahrgangTable();
+  }
+
+  function onSplitJahrgangJahrgangChange(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    state.splitJahrgangRows[idx].jahrgangId = evt.target.value ? Number(evt.target.value) : null;
+    persist();
+  }
+
+  function onSplitJahrgangZielkursChange(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    state.splitJahrgangRows[idx].zielkursText = evt.target.value.trim();
+    persist();
+  }
+
+  function onSplitJahrgangAddRow() {
+    state.splitJahrgangRows.push({ quellkursId: null, jahrgangId: null, zielkursText: "" });
+    persist();
+    renderSplitJahrgangTable();
+  }
+
+  /** "+ Jahrgang": fügt direkt unter der Zeile eine neue Zeile mit demselben Quellkurs ein, damit sich
+   *  ein Kurs bequem auf mehrere Jahrgänge/Zielkurse aufteilen lässt, ohne den Quellkurs neu wählen zu müssen. */
+  function onSplitJahrgangAddBelow(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    const quelle = state.splitJahrgangRows[idx];
+    state.splitJahrgangRows.splice(idx + 1, 0, { quellkursId: quelle.quellkursId, jahrgangId: null, zielkursText: "" });
+    persist();
+    renderSplitJahrgangTable();
+  }
+
+  function onSplitJahrgangRemoveRow(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    state.splitJahrgangRows.splice(idx, 1);
+    persist();
+    renderSplitJahrgangTable();
+  }
+
+  /** Baut aus einem Quell-Leistungsdaten-Eintrag den Payload für den Zielkurs: Noten-/Zeugnisrelevante
+   *  Felder werden vom Quelleintrag übernommen (nichts an Bewertungsstand geht verloren), Kursart,
+   *  Wochenstunden und Kursleitung kommen vom Zielkurs selbst (das ist ja jetzt der maßgebliche Kurs). */
+  function buildSplitLeistungsdatenPayload(quellEintrag, zielkurs) {
+    return {
+      lernabschnittID: quellEintrag.lernabschnittID,
+      fachID: quellEintrag.fachID,
+      kursID: zielkurs.id,
+      kursart: zielkurs.kursartAllg || quellEintrag.kursart || null,
+      lehrerID: zielkurs.lehrer ?? null,
+      wochenstunden: zielkurs.wochenstunden ?? quellEintrag.wochenstunden ?? 0,
+      aufZeugnis: !!quellEintrag.aufZeugnis,
+      istEpochal: !!quellEintrag.istEpochal,
+      umfangLernstandsbericht: quellEintrag.umfangLernstandsbericht || "V",
+      textFachbezogeneLernentwicklung: quellEintrag.textFachbezogeneLernentwicklung || "",
+      note: quellEintrag.note ?? null,
+      noteQuartal: quellEintrag.noteQuartal ?? null,
+    };
+  }
+
+  /** Löst das Zielkurs-Feld einer Zeile auf: bekannter Kurs (per Datalist-Auswahl, `[id]`-Suffix) wird
+   *  direkt verwendet, ansonsten wird ein neuer Kurs mit dem eingetippten Kürzel angelegt (Fach/Kursart/
+   *  Wochenstunden vom Quellkurs übernommen, Jahrgang auf genau den dieser Zeile beschränkt). */
+  async function resolveOrCreateZielkurs(row, quellkurs, jahrgang, log) {
+    const zielId = idFromLabel(row.zielkursText);
+    if (zielId != null && kursById.has(zielId)) {
+      return kursById.get(zielId);
+    }
+    const kuerzel = row.zielkursText.trim();
+    if (!kuerzel) return null;
+    const payload = {
+      idSchuljahresabschnitt: abschnittId,
+      kuerzel,
+      kursartAllg: quellkurs.kursartAllg,
+      idFach: quellkurs.idFach ?? null,
+      bezeichnungZeugnis: quellkurs.bezeichnungZeugnis || kuerzel,
+      wochenstunden: quellkurs.wochenstunden ?? 0,
+      istSichtbar: true,
+      idJahrgaenge: [jahrgang.id],
+      schienen: [],
+    };
+    const neuerKurs = await SvwsApi.createKurs(payload);
+    schildKurse.push(neuerKurs);
+    kursById.set(neuerKurs.id, neuerKurs);
+    buildKursDatalistMitAnzahl();
+    row.zielkursText = kursLabelMitAnzahl(neuerKurs);
+    log.textContent += `  Zielkurs "${kuerzel}" neu angelegt (ID ${neuerKurs.id}, Jahrgang ${jahrgang.kuerzel || jahrgang.kuerzelStatistik}).\n`;
+    return neuerKurs;
+  }
+
+  async function onExecuteSplitJahrgang() {
+    const log = $("split-jahrgang-log");
+    const statusEl = $("split-jahrgang-status");
+    const progressEl = $("split-jahrgang-progress");
+    log.textContent = "";
+
+    const rows = state.splitJahrgangRows.filter(
+      (r) => r.quellkursId != null && r.jahrgangId != null && r.zielkursText && r.zielkursText.trim()
+    );
+    if (rows.length === 0) {
+      setStatus(statusEl, "Keine vollständig ausgefüllten Zeilen (Quellkurs, Jahrgang und Zielkurs nötig).", "error");
+      return;
+    }
+
+    $("btn-split-jahrgang-execute").disabled = true;
+    progressEl.classList.remove("hidden");
+    progressEl.max = rows.length;
+    progressEl.value = 0;
+
+    let gesamtVerschoben = 0;
+    let gesamtFehler = 0;
+    let zeilenNr = 0;
+
+    for (const row of rows) {
+      zeilenNr++;
+      progressEl.value = zeilenNr;
+      const quellkurs = kursById.get(row.quellkursId);
+      const jahrgang = schildJahrgaenge.find((j) => j.id === row.jahrgangId);
+      if (!quellkurs || !jahrgang) {
+        log.textContent += `Zeile ${zeilenNr}: Quellkurs oder Jahrgang nicht mehr gültig, übersprungen.\n`;
+        gesamtFehler++;
+        continue;
+      }
+
+      setStatus(statusEl, `Zeile ${zeilenNr}/${rows.length}: ${quellkurs.kuerzel} → ${jahrgang.kuerzel || jahrgang.kuerzelStatistik} …`, "");
+      log.textContent += `Zeile ${zeilenNr}: Quellkurs "${quellkurs.kuerzel}", Jahrgang "${jahrgang.kuerzel || jahrgang.kuerzelStatistik}" …\n`;
+
+      let zielkurs;
+      try {
+        zielkurs = await resolveOrCreateZielkurs(row, quellkurs, jahrgang, log);
+      } catch (err) {
+        log.textContent += `  FEHLER beim Anlegen des Zielkurses: ${err.message}\n`;
+        gesamtFehler++;
+        continue;
+      }
+      if (!zielkurs) {
+        log.textContent += `  Kein Zielkurs-Kürzel angegeben, übersprungen.\n`;
+        continue;
+      }
+      if (zielkurs.id === quellkurs.id) {
+        log.textContent += `  Quellkurs und Zielkurs sind identisch, übersprungen.\n`;
+        continue;
+      }
+
+      const kandidaten = (quellkurs.schueler || []).filter((s) => {
+        const voll = schuelerById.get(s.id);
+        return voll && voll.idJahrgang === jahrgang.id;
+      });
+      const ausserhalbFilter = (quellkurs.schueler || []).length - kandidaten.length;
+      if (kandidaten.length === 0) {
+        log.textContent += `  Keine passenden Schüler:innen im Quellkurs gefunden${
+          ausserhalbFilter ? ` (${ausserhalbFilter} Schüler:innen im Kurs sind nicht im aktuell geladenen Status-Filter enthalten)` : ""
+        }.\n`;
+        continue;
+      }
+
+      const ladBySchueler = new Map();
+      await mapWithConcurrency(kandidaten, 6, async (s) => {
+        try {
+          ladBySchueler.set(s.id, await SvwsApi.getLernabschnittsdaten(s.id, abschnittId));
+        } catch (e) {
+          ladBySchueler.set(s.id, null);
+        }
+      });
+
+      const ops = [];
+      let ladFehler = 0;
+      for (const s of kandidaten) {
+        const lad = ladBySchueler.get(s.id);
+        if (!lad) {
+          ladFehler++;
+          continue;
+        }
+        const quellEintrag = (lad.leistungsdaten || []).find((l) => l.kursID === quellkurs.id);
+        if (!quellEintrag) continue;
+        const hatSchonZiel = (lad.leistungsdaten || []).some((l) => l.kursID === zielkurs.id);
+        ops.push({
+          schuelerLabel: schuelerLabel(s),
+          quellEintragId: quellEintrag.id,
+          createPayload: hatSchonZiel ? null : buildSplitLeistungsdatenPayload(quellEintrag, zielkurs),
+        });
+      }
+
+      // Neu im Zielkurs anlegen. Ein fehlgeschlagener Create darf NICHT dazu führen, dass der
+      // Quelleintrag trotzdem gelöscht wird - sonst verliert die Person die Fachbelegung komplett.
+      const toCreate = ops.filter((op) => op.createPayload);
+      const createResult = await batchWithBisection(toCreate, (subset) =>
+        SvwsApi.createLeistungsdatenMultiple(subset.map((op) => op.createPayload))
+      );
+      const fehlgeschlageneOps = new Set(createResult.failed.map((f) => f.item));
+
+      const toDelete = ops.filter((op) => !op.createPayload || !fehlgeschlageneOps.has(op));
+      const deleteResult = await batchWithBisection(
+        toDelete.map((op) => op.quellEintragId),
+        (subset) => SvwsApi.deleteLeistungsdatenMultiple(subset)
+      );
+
+      gesamtVerschoben += deleteResult.ok;
+      const zeilenFehler = createResult.failed.length + deleteResult.failed.length + ladFehler;
+      gesamtFehler += zeilenFehler;
+
+      log.textContent +=
+        `  ${deleteResult.ok} Schüler:innen verschoben` +
+        (createResult.failed.length ? `, ${createResult.failed.length} Anlage-Fehler (Quelleintrag bewusst nicht gelöscht)` : "") +
+        (deleteResult.failed.length ? `, ${deleteResult.failed.length} Lösch-Fehler (jetzt evtl. doppelt vorhanden)` : "") +
+        (ladFehler ? `, ${ladFehler}x Lernabschnittsdaten nicht ladbar` : "") +
+        ".\n";
+      for (const f of createResult.failed) log.textContent += `    Anlegen fehlgeschlagen (${f.item.schuelerLabel}): ${f.message}\n`;
+      for (const f of deleteResult.failed) log.textContent += `    Löschen fehlgeschlagen (Leistungsdaten-ID ${f.item}): ${f.message}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    progressEl.classList.add("hidden");
+    persist();
+    renderSplitJahrgangTable();
+    $("btn-split-jahrgang-execute").disabled = false;
+    setStatus(
+      statusEl,
+      `Fertig: ${gesamtVerschoben} Schüler:innen verschoben${gesamtFehler ? `, ${gesamtFehler} Fehler (siehe Protokoll)` : ""}.`,
+      gesamtFehler ? "warn" : "ok"
+    );
   }
 
   // ---------- Initialisierung ----------
@@ -1404,6 +1690,19 @@
     $("btn-run-check-leerer-kurs").addEventListener("click", onRunCheckLeererKurs);
     $("check-leerer-kurs-select-all").addEventListener("change", onCheckLeererKursSelectAll);
     $("btn-delete-check-leerer-kurs").addEventListener("click", onDeleteCheckLeererKurs);
+
+    $("btn-split-jahrgang-add-row").addEventListener("click", onSplitJahrgangAddRow);
+    $("btn-split-jahrgang-execute").addEventListener("click", onExecuteSplitJahrgang);
+    document.querySelector("#split-jahrgang-table").addEventListener("change", (evt) => {
+      if (evt.target.classList.contains("split-quellkurs-input")) onSplitJahrgangQuellkursChange(evt);
+      else if (evt.target.classList.contains("split-jahrgang-select")) onSplitJahrgangJahrgangChange(evt);
+      else if (evt.target.classList.contains("split-zielkurs-input")) onSplitJahrgangZielkursChange(evt);
+    });
+    document.querySelector("#split-jahrgang-table").addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("split-add-below")) onSplitJahrgangAddBelow(evt);
+      else if (evt.target.classList.contains("split-remove-row")) onSplitJahrgangRemoveRow(evt);
+    });
+    renderSplitJahrgangTable();
 
     document.querySelectorAll("#student-status-filter input").forEach((cb) => cb.addEventListener("change", applyStudentFilter));
     document.querySelectorAll("#course-status-filter input").forEach((cb) => cb.addEventListener("change", applyCourseFilter));
