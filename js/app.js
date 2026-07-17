@@ -21,7 +21,7 @@
   let schuelerById = new Map();
   let kursById = new Map();
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
-  let createKursTargetCourseText = null; // welcher Kurswahl-Text hat den "Kurs anlegen"-Dialog geöffnet
+  let createKursOnCreated = null; // Callback(neuerKurs), der nach erfolgreichem Anlegen im Dialog aufgerufen wird
 
   let missingStudents = []; // [{id, nachname, vorname, klasse}] – Schild-Schüler ohne Forms-Zuordnung
 
@@ -279,16 +279,19 @@
    *  nicht durch eine fehlende Jahrgangszuordnung von regulären Kursen abweicht. */
   const DEFAULT_JAHRGANG_KUERZEL = new Set(["05", "06", "07", "08", "09", "10", "EF", "Q1", "Q2"]);
 
-  /** Baut die Jahrgangs-Checkboxen im "Neuen Kurs anlegen"-Dialog neu auf, inkl. Standard-Vorauswahl.
-   *  Wird bei jedem Öffnen des Dialogs aufgerufen, damit eine vorherige manuelle Auswahl nicht hängen
-   *  bleibt. */
-  function renderCreateKursJahrgaenge() {
+  /** Baut die Jahrgangs-Checkboxen im "Neuen Kurs anlegen"-Dialog neu auf. Wird bei jedem Öffnen des
+   *  Dialogs aufgerufen, damit eine vorherige manuelle Auswahl nicht hängen bleibt.
+   *  @param preselectIds optionale explizite Vorauswahl (z.B. genau der Jahrgang einer Split-Zeile);
+   *    ohne Angabe greift die generische Vorauswahl `DEFAULT_JAHRGANG_KUERZEL`. Immer nur ein Vorschlag -
+   *    in beiden Fällen bleibt die Auswahl im Dialog frei änderbar. */
+  function renderCreateKursJahrgaenge(preselectIds) {
+    const preselect = preselectIds ? new Set(preselectIds) : null;
     const container = $("create-kurs-jahrgaenge-container");
     container.innerHTML = schildJahrgaenge
       .map((j) => {
         const label = j.kuerzel || j.kuerzelStatistik || `#${j.id}`;
         const vergleichsKuerzel = (j.kuerzel || j.kuerzelStatistik || "").trim().toUpperCase();
-        const checked = DEFAULT_JAHRGANG_KUERZEL.has(vergleichsKuerzel);
+        const checked = preselect ? preselect.has(j.id) : DEFAULT_JAHRGANG_KUERZEL.has(vergleichsKuerzel);
         return `<label><input type="checkbox" class="create-kurs-jahrgang" value="${j.id}" ${checked ? "checked" : ""}/> ${escapeHtml(label)}</label>`;
       })
       .join("");
@@ -798,7 +801,25 @@
     tbody.querySelectorAll(".course-match-input").forEach((input) => input.addEventListener("change", onCourseMatchInputChange));
     tbody.querySelectorAll(".course-ignore").forEach((cb) => cb.addEventListener("change", onCourseIgnoreChange));
     tbody.querySelectorAll(".btn-create-kurs-row").forEach((btn) =>
-      btn.addEventListener("click", (evt) => openCreateKursDialog(evt.target.closest("tr").dataset.courseText))
+      btn.addEventListener("click", (evt) => {
+        const courseText = evt.target.closest("tr").dataset.courseText;
+        const suggestion = FormsImport.stripKnownPrefix(courseText, state.columnPrefixes).trim();
+        openCreateKursDialog({
+          displayText: courseText,
+          kuerzelSuggestion: suggestion,
+          bezeichnungSuggestion: suggestion,
+          onCreated: (neuerKurs) => {
+            Matching.setMatch(state.kursMatching, courseText, {
+              targetId: neuerKurs.id,
+              targetLabel: kursLabel(neuerKurs),
+              manual: true,
+            });
+            persist();
+            renderCourseMatchTable();
+            setStatus($("course-match-summary"), `Kurs "${neuerKurs.kuerzel}" angelegt und zugeordnet.`, "ok");
+          },
+        });
+      })
     );
     applyCourseFilter();
   }
@@ -866,21 +887,29 @@
   }
 
   /**
-   * Öffnet den "Neuen Kurs anlegen"-Dialog für einen bestimmten Forms-Kurstext (z.B. "S18 Judo").
-   * Kürzel/Zeugnisbezeichnung werden mit dem Text ohne Spalten-Kürzel vorbelegt (siehe Schritt 3a) -
-   * das Kürzel dient nur der internen Unterscheidung, nicht als sinnvoller Kurs-Name in Schild.
+   * Öffnet den "Neuen Kurs anlegen"-Dialog generisch für jeden Aufrufer (Schritt 5 Kurs-Matching,
+   * Schritt 8 Split-Zielkurs, …). Alle Felder werden nur als editierbarer *Vorschlag* vorbelegt - nichts
+   * wird beim Anlegen automatisch/unsichtbar übernommen, der Dialog muss immer aktiv bestätigt werden.
+   * @param options.displayText Anzeigetext über dem Formular (Kontext, z.B. der Forms-Kurstext)
+   * @param options.kuerzelSuggestion Vorschlag fürs Kürzel-Feld
+   * @param options.bezeichnungSuggestion Vorschlag für die Zeugnisbezeichnung (Default: kuerzelSuggestion)
+   * @param options.fachId Vorausgewähltes Fach (optional)
+   * @param options.kursart Vorbelegte Kursart (optional)
+   * @param options.wochenstunden Vorbelegte Wochenstunden (Default 2)
+   * @param options.jahrgangIds explizite Jahrgangs-Vorauswahl (optional, sonst generischer Default)
+   * @param options.onCreated(neuerKurs) wird nach erfolgreichem Anlegen aufgerufen (Kurs ist bereits in
+   *   schildKurse/kursById/den Datalists eingetragen)
    */
-  function openCreateKursDialog(courseText) {
-    createKursTargetCourseText = courseText;
-    const suggestion = FormsImport.stripKnownPrefix(courseText, state.columnPrefixes).trim();
-    $("create-kurs-source-text").textContent = courseText;
-    $("create-kurs-kuerzel").value = suggestion;
-    $("create-kurs-bezeichnung").value = suggestion;
-    $("create-kurs-fach").value = "";
-    $("create-kurs-kursart").value = "";
-    $("create-kurs-wochenstunden").value = 2;
+  function openCreateKursDialog(options) {
+    createKursOnCreated = options.onCreated || null;
+    $("create-kurs-source-text").textContent = options.displayText || "";
+    $("create-kurs-kuerzel").value = options.kuerzelSuggestion || "";
+    $("create-kurs-bezeichnung").value = options.bezeichnungSuggestion ?? options.kuerzelSuggestion ?? "";
+    $("create-kurs-fach").value = options.fachId != null ? String(options.fachId) : "";
+    $("create-kurs-kursart").value = options.kursart || "";
+    $("create-kurs-wochenstunden").value = options.wochenstunden ?? 2;
     $("create-kurs-sichtbar").checked = true;
-    renderCreateKursJahrgaenge();
+    renderCreateKursJahrgaenge(options.jahrgangIds || null);
     setStatus($("create-kurs-status"), "", "");
     $("create-kurs-dialog").showModal();
     $("create-kurs-kuerzel").focus();
@@ -888,7 +917,7 @@
 
   function closeCreateKursDialog() {
     $("create-kurs-dialog").close();
-    createKursTargetCourseText = null;
+    createKursOnCreated = null;
   }
 
   async function onCreateKursFormSubmit(evt) {
@@ -925,22 +954,9 @@
       kursById.set(neuerKurs.id, neuerKurs);
       buildDatalists();
 
-      if (createKursTargetCourseText) {
-        Matching.setMatch(state.kursMatching, createKursTargetCourseText, {
-          targetId: neuerKurs.id,
-          targetLabel: kursLabel(neuerKurs),
-          manual: true,
-        });
-        persist();
-        renderCourseMatchTable();
-      }
-
+      const callback = createKursOnCreated;
       closeCreateKursDialog();
-      setStatus(
-        $("course-match-summary"),
-        `Kurs "${neuerKurs.kuerzel}" angelegt und zugeordnet.`,
-        "ok"
-      );
+      if (callback) callback(neuerKurs);
     } catch (err) {
       setStatus($("create-kurs-status"), err.message, "error");
     } finally {
@@ -1406,12 +1422,15 @@
     tbody.innerHTML = state.splitJahrgangRows
       .map((row, idx) => {
         const quellkurs = row.quellkursId != null ? kursById.get(row.quellkursId) : null;
-        const quellkursValue = quellkurs ? kursLabelMitAnzahl(quellkurs) : "";
+        const zielkurs = row.zielkursId != null ? kursById.get(row.zielkursId) : null;
         return `
         <tr data-row-idx="${idx}">
-          <td><input type="text" class="split-quellkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(quellkursValue)}" placeholder="Kurs wählen" /></td>
+          <td><input type="text" class="split-quellkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(quellkurs ? kursLabelMitAnzahl(quellkurs) : "")}" placeholder="Kurs wählen" /></td>
           <td><select class="split-jahrgang-select">${jahrgangOptionsHtml(row.jahrgangId)}</select></td>
-          <td><input type="text" class="split-zielkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(row.zielkursText || "")}" placeholder="Kürzel (neu oder vorhanden)" /></td>
+          <td>
+            <input type="text" class="split-zielkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(zielkurs ? kursLabelMitAnzahl(zielkurs) : "")}" placeholder="vorhandenen Kurs wählen" />
+            <button type="button" class="btn-secondary split-zielkurs-create" title="Neuen Kurs für diese Zeile anlegen">+ Kurs</button>
+          </td>
           <td class="row-actions">
             <button type="button" class="btn-secondary split-add-below">+ Jahrgang</button>
             <button type="button" class="btn-secondary split-remove-row">✕</button>
@@ -1439,14 +1458,20 @@
     persist();
   }
 
+  /** Zielkurs akzeptiert bewusst nur vorhandene Kurse (per Datalist-Auswahl, `[id]`-Suffix) - für einen
+   *  noch nicht existierenden Kurs gibt es stattdessen den "+ Kurs"-Button (öffnet den bekannten
+   *  "Neuen Kurs anlegen"-Dialog mit editierbaren Vorschlägen statt eines automatischen Anlegens ohne
+   *  Rückfrage). */
   function onSplitJahrgangZielkursChange(evt) {
     const idx = splitJahrgangRowIndex(evt);
-    state.splitJahrgangRows[idx].zielkursText = evt.target.value.trim();
+    const id = idFromLabel(evt.target.value.trim());
+    state.splitJahrgangRows[idx].zielkursId = id != null && kursById.has(id) ? id : null;
     persist();
+    renderSplitJahrgangTable();
   }
 
   function onSplitJahrgangAddRow() {
-    state.splitJahrgangRows.push({ quellkursId: null, jahrgangId: null, zielkursText: "" });
+    state.splitJahrgangRows.push({ quellkursId: null, jahrgangId: null, zielkursId: null });
     persist();
     renderSplitJahrgangTable();
   }
@@ -1456,7 +1481,7 @@
   function onSplitJahrgangAddBelow(evt) {
     const idx = splitJahrgangRowIndex(evt);
     const quelle = state.splitJahrgangRows[idx];
-    state.splitJahrgangRows.splice(idx + 1, 0, { quellkursId: quelle.quellkursId, jahrgangId: null, zielkursText: "" });
+    state.splitJahrgangRows.splice(idx + 1, 0, { quellkursId: quelle.quellkursId, jahrgangId: null, zielkursId: null });
     persist();
     renderSplitJahrgangTable();
   }
@@ -1466,6 +1491,34 @@
     state.splitJahrgangRows.splice(idx, 1);
     persist();
     renderSplitJahrgangTable();
+  }
+
+  /** "+ Kurs" im Zielkurs-Feld einer Split-Zeile: öffnet den "Neuen Kurs anlegen"-Dialog mit Vorschlägen
+   *  aus dem Quellkurs (Kürzel-Vorschlag, Fach, Kursart, Wochenstunden) und dem Jahrgang genau dieser
+   *  Zeile vorausgewählt - alles im Dialog frei änderbar, nichts wird ungesehen übernommen. */
+  function onSplitJahrgangCreateZielkurs(evt) {
+    const idx = splitJahrgangRowIndex(evt);
+    const row = state.splitJahrgangRows[idx];
+    const quellkurs = row.quellkursId != null ? kursById.get(row.quellkursId) : null;
+    const jahrgang = row.jahrgangId != null ? schildJahrgaenge.find((j) => j.id === row.jahrgangId) : null;
+    const jahrgangLabel = jahrgang ? jahrgang.kuerzel || jahrgang.kuerzelStatistik || "" : "";
+    const kuerzelSuggestion = quellkurs ? [quellkurs.kuerzel, jahrgangLabel].filter(Boolean).join("-") : "";
+
+    openCreateKursDialog({
+      displayText: quellkurs ? `Split-Zeile: ${quellkurs.kuerzel} → ${jahrgangLabel || "?"}` : "Split-Zeile",
+      kuerzelSuggestion,
+      bezeichnungSuggestion: quellkurs ? quellkurs.bezeichnungZeugnis || kuerzelSuggestion : "",
+      fachId: quellkurs ? quellkurs.idFach : null,
+      kursart: quellkurs ? quellkurs.kursartAllg : "",
+      wochenstunden: quellkurs ? quellkurs.wochenstunden : 2,
+      jahrgangIds: jahrgang ? [jahrgang.id] : null,
+      onCreated: (neuerKurs) => {
+        row.zielkursId = neuerKurs.id;
+        persist();
+        renderSplitJahrgangTable();
+        setStatus($("split-jahrgang-status"), `Kurs "${neuerKurs.kuerzel}" angelegt und als Zielkurs eingetragen.`, "ok");
+      },
+    });
   }
 
   /** Baut aus einem Quell-Leistungsdaten-Eintrag den Payload für den Zielkurs: Noten-/Zeugnisrelevante
@@ -1488,36 +1541,6 @@
     };
   }
 
-  /** Löst das Zielkurs-Feld einer Zeile auf: bekannter Kurs (per Datalist-Auswahl, `[id]`-Suffix) wird
-   *  direkt verwendet, ansonsten wird ein neuer Kurs mit dem eingetippten Kürzel angelegt (Fach/Kursart/
-   *  Wochenstunden vom Quellkurs übernommen, Jahrgang auf genau den dieser Zeile beschränkt). */
-  async function resolveOrCreateZielkurs(row, quellkurs, jahrgang, log) {
-    const zielId = idFromLabel(row.zielkursText);
-    if (zielId != null && kursById.has(zielId)) {
-      return kursById.get(zielId);
-    }
-    const kuerzel = row.zielkursText.trim();
-    if (!kuerzel) return null;
-    const payload = {
-      idSchuljahresabschnitt: abschnittId,
-      kuerzel,
-      kursartAllg: quellkurs.kursartAllg,
-      idFach: quellkurs.idFach ?? null,
-      bezeichnungZeugnis: quellkurs.bezeichnungZeugnis || kuerzel,
-      wochenstunden: quellkurs.wochenstunden ?? 0,
-      istSichtbar: true,
-      idJahrgaenge: [jahrgang.id],
-      schienen: [],
-    };
-    const neuerKurs = await SvwsApi.createKurs(payload);
-    schildKurse.push(neuerKurs);
-    kursById.set(neuerKurs.id, neuerKurs);
-    buildKursDatalistMitAnzahl();
-    row.zielkursText = kursLabelMitAnzahl(neuerKurs);
-    log.textContent += `  Zielkurs "${kuerzel}" neu angelegt (ID ${neuerKurs.id}, Jahrgang ${jahrgang.kuerzel || jahrgang.kuerzelStatistik}).\n`;
-    return neuerKurs;
-  }
-
   async function onExecuteSplitJahrgang() {
     const log = $("split-jahrgang-log");
     const statusEl = $("split-jahrgang-status");
@@ -1525,7 +1548,7 @@
     log.textContent = "";
 
     const rows = state.splitJahrgangRows.filter(
-      (r) => r.quellkursId != null && r.jahrgangId != null && r.zielkursText && r.zielkursText.trim()
+      (r) => r.quellkursId != null && r.jahrgangId != null && r.zielkursId != null
     );
     if (rows.length === 0) {
       setStatus(statusEl, "Keine vollständig ausgefüllten Zeilen (Quellkurs, Jahrgang und Zielkurs nötig).", "error");
@@ -1555,16 +1578,10 @@
       setStatus(statusEl, `Zeile ${zeilenNr}/${rows.length}: ${quellkurs.kuerzel} → ${jahrgang.kuerzel || jahrgang.kuerzelStatistik} …`, "");
       log.textContent += `Zeile ${zeilenNr}: Quellkurs "${quellkurs.kuerzel}", Jahrgang "${jahrgang.kuerzel || jahrgang.kuerzelStatistik}" …\n`;
 
-      let zielkurs;
-      try {
-        zielkurs = await resolveOrCreateZielkurs(row, quellkurs, jahrgang, log);
-      } catch (err) {
-        log.textContent += `  FEHLER beim Anlegen des Zielkurses: ${err.message}\n`;
-        gesamtFehler++;
-        continue;
-      }
+      const zielkurs = kursById.get(row.zielkursId);
       if (!zielkurs) {
-        log.textContent += `  Kein Zielkurs-Kürzel angegeben, übersprungen.\n`;
+        log.textContent += `  Zielkurs nicht mehr gültig, übersprungen.\n`;
+        gesamtFehler++;
         continue;
       }
       if (zielkurs.id === quellkurs.id) {
@@ -1701,6 +1718,7 @@
     document.querySelector("#split-jahrgang-table").addEventListener("click", (evt) => {
       if (evt.target.classList.contains("split-add-below")) onSplitJahrgangAddBelow(evt);
       else if (evt.target.classList.contains("split-remove-row")) onSplitJahrgangRemoveRow(evt);
+      else if (evt.target.classList.contains("split-zielkurs-create")) onSplitJahrgangCreateZielkurs(evt);
     });
     renderSplitJahrgangTable();
 

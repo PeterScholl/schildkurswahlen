@@ -140,13 +140,16 @@ vorherige Schritt erledigt ist.
    Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
    jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
    Zielkurs) definiert die gewünschten Verschiebungen:
-   - **Quellkurs**/**Zielkurs**: Autocomplete-Felder wie in Schritt 4/5, zeigen zusätzlich die aktuelle
-     Schülerzahl je Kurs in Klammern an (z.B. "AGGT-Robotik (23)").
-   - **Zielkurs, der noch nicht existiert**: einfach ein neues Kürzel eintippen (nicht aus der Liste
-     wählen) – beim Ausführen wird der Kurs automatisch angelegt, mit Fach/Kursart/Wochenstunden vom
-     Quellkurs übernommen und dem Jahrgang dieser Zeile als einzigem zugeordneten Jahrgang (präziser als
-     die generische Jahrgangs-Vorbelegung im "Neuen Kurs anlegen"-Dialog aus Schritt 5, da hier ja schon
-     bekannt ist, für welchen Jahrgang der Kurs gedacht ist).
+   - **Quellkurs**/**Zielkurs**: Autocomplete-Felder wie in Schritt 4/5, akzeptieren bewusst nur
+     *vorhandene* Kurse (zeigen zusätzlich die aktuelle Schülerzahl je Kurs in Klammern an, z.B.
+     "AGGT-Robotik (23)") – kein "Freitext legt automatisch einen Kurs an" wie in einer früheren Version,
+     das war zu intransparent.
+   - **Zielkurs, der noch nicht existiert**: über den Button **"+ Kurs"** neben dem Zielkurs-Feld öffnet
+     sich derselbe "Neuen Kurs anlegen"-Dialog wie in Schritt 5, vorbelegt mit Vorschlägen aus dem
+     Quellkurs (Kürzel-Vorschlag `<Quellkurs-Kürzel>-<Jahrgang>`, Fach, Kursart, Wochenstunden) und dem
+     Jahrgang dieser Zeile als vorausgewähltem (aber änderbarem) Jahrgang – alle Werte bleiben im Dialog
+     frei editierbar, nichts wird ungesehen übernommen. Nach dem Anlegen wird der neue Kurs automatisch
+     als Zielkurs der Zeile eingetragen.
    - **"+ Jahrgang"**: fügt direkt unter der Zeile eine neue Zeile mit demselben Quellkurs ein, um einen
      Kurs bequem auf mehrere Jahrgänge/Zielkurse aufzuteilen, ohne den Quellkurs erneut auswählen zu müssen.
    - **"Split durchführen"**: verarbeitet alle vollständig ausgefüllten Zeilen nacheinander (mit
@@ -429,16 +432,25 @@ Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
   Schritt 4 + 5 neu. Wird nach "Auswahl übernehmen" (Schritt 3), "Übernehmen" (Schritt 3a) und "Kürzel
   übernehmen" (Schritt 3b) aufgerufen.
 
-Funktionen rund um den "Neuen Kurs anlegen"-Dialog in Schritt 5:
+Funktionen rund um den "Neuen Kurs anlegen"-Dialog (verwendet von Schritt 5 *und* "Split in
+Jahrgangskurse" in Schritt 8 - bewusst generisch gehalten, damit jeder künftige Aufrufer denselben Dialog
+mit eigenen Vorschlägen und eigener Erfolgs-Aktion wiederverwenden kann):
 
 - `populateCreateKursDialogOptions()`: befüllt das Fach-Dropdown und die Kursarten-Datalist im Dialog aus
   den in Schritt 2 geladenen Fächern/Kursarten. Wird nach jedem "Schild-Daten laden" neu aufgerufen.
-- `openCreateKursDialog(courseText)` / `closeCreateKursDialog()`: öffnen bzw. schließen den nativen
-  `<dialog>` und merken sich in `createKursTargetCourseText`, für welche Tabellenzeile er geöffnet wurde.
+- `openCreateKursDialog(options)`: öffnet den nativen `<dialog>` und befüllt alle Felder als editierbare
+  *Vorschläge* aus `options` (`displayText`, `kuerzelSuggestion`, `bezeichnungSuggestion`, `fachId`,
+  `kursart`, `wochenstunden`, `jahrgangIds`). `options.onCreated(neuerKurs)` wird nach erfolgreichem
+  Anlegen aufgerufen und entscheidet kontextspezifisch, was mit dem neuen Kurs passiert (Schritt 5:
+  Eintrag in `state.kursMatching`; Split-Zeile: `row.zielkursId` setzen) - der Dialog selbst kennt diese
+  Aufrufer-Logik nicht mehr, nur noch den generischen Callback (gemerkt in der Modul-Variable
+  `createKursOnCreated`).
+- `renderCreateKursJahrgaenge(preselectIds)`: baut die Jahrgangs-Checkboxen; ohne `preselectIds` greift
+  die generische Vorauswahl `DEFAULT_JAHRGANG_KUERZEL` (05–10, EF, Q1, Q2), mit expliziten IDs (z.B. genau
+  der Jahrgang einer Split-Zeile) wird nur dieser vorausgewählt - beides bleibt im Dialog frei änderbar.
 - `onCreateKursFormSubmit(evt)`: baut aus den Formularfeldern das `KursDaten`-Objekt, ruft
-  `SvwsApi.createKurs()` auf und übernimmt bei Erfolg den neuen Kurs in `schildKurse`/`kursById`, die
-  Datalist (`buildDatalists()`) sowie direkt als Treffer für `createKursTargetCourseText` in
-  `state.kursMatching` - ganz ohne Umweg über "Automatisch matchen" oder manuelle Auswahl.
+  `SvwsApi.createKurs()` auf, übernimmt bei Erfolg den neuen Kurs in `schildKurse`/`kursById`/die
+  Datalists und ruft danach den zuvor über `openCreateKursDialog()` hinterlegten Callback auf.
 
 Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen während der Entwicklung" oben:
 
@@ -481,9 +493,11 @@ Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
   `onSplitJahrgangRemoveRow()`: verwalten `state.splitJahrgangRows` (persistiert) und deren Darstellung.
   Delegierte Change-/Click-Handler am statischen `#split-jahrgang-table`-Element bedienen alle Zeilen,
   ohne nach jedem Re-Render neu verdrahtet werden zu müssen.
-- `resolveOrCreateZielkurs(row, quellkurs, jahrgang, log)`: löst das Zielkurs-Feld auf (bekannter Kurs per
-  `[id]`-Suffix) oder legt bei unbekanntem Text automatisch einen neuen Kurs an (`SvwsApi.createKurs()`,
-  Fach/Kursart/Wochenstunden vom Quellkurs, `idJahrgaenge: [jahrgang.id]`).
+- `onSplitJahrgangZielkursChange()`: löst das Zielkurs-Feld strikt auf einen vorhandenen Kurs auf (wie
+  `onSplitJahrgangQuellkursChange()`) - kein Freitext-Fallback.
+- `onSplitJahrgangCreateZielkurs()`: öffnet den (generalisierten, siehe unten) "Neuen Kurs
+  anlegen"-Dialog mit Vorschlägen aus dem Quellkurs/Jahrgang der Zeile; trägt den neu angelegten Kurs im
+  `onCreated`-Callback als Zielkurs der Zeile ein.
 - `buildSplitLeistungsdatenPayload(quellEintrag, zielkurs)`: baut den Leistungsdaten-Payload für den
   Zielkurs - Noten-/Zeugnisfelder vom Quelleintrag, Kursart/Wochenstunden/Kursleitung vom Zielkurs.
 - `onExecuteSplitJahrgang()`: verarbeitet alle vollständigen Zeilen sequenziell. Pro Zeile: Kandidaten
