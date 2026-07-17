@@ -16,9 +16,11 @@
   let schildKurse = [];
   let schildFaecher = [];
   let schildKlassen = [];
+  let schildKursarten = []; // Katalog gültiger Kursarten (für "Neuen Kurs anlegen"-Dialog)
   let schuelerById = new Map();
   let kursById = new Map();
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
+  let createKursTargetCourseText = null; // welcher Kurswahl-Text hat den "Kurs anlegen"-Dialog geöffnet
 
   let missingStudents = []; // [{id, nachname, vorname, klasse}] – Schild-Schüler ohne Forms-Zuordnung
 
@@ -184,14 +186,43 @@
         console.warn("Klassen konnten nicht geladen werden:", klassenErr);
       }
 
+      // Kursarten sind nur für den "Neuen Kurs anlegen"-Dialog (Schritt 5) nötig - auch hier soll ein
+      // Fehler nicht den ganzen Schritt blockieren, das Kürzel-Feld im Dialog bleibt sonst per Freitext nutzbar.
+      try {
+        schildKursarten = await SvwsApi.getKursarten();
+      } catch (kursartenErr) {
+        schildKursarten = [];
+        console.warn("Kursarten konnten nicht geladen werden:", kursartenErr);
+      }
+
       $("schild-data-counts").textContent =
         `${schildSchueler.length} Schüler (gefiltert), ${schildKurse.length} Kurse, ${schildFaecher.length} Fächer, ${schildKlassen.length} Klassen geladen.`;
       setStatus(statusEl, "Fertig." + klassenHinweis, klassenHinweis ? "warn" : "ok");
       reveal("section-forms-import");
       buildDatalists();
+      populateCreateKursDialogOptions();
     } catch (err) {
       setStatus(statusEl, err.message, "error");
     }
+  }
+
+  function populateCreateKursDialogOptions() {
+    const fachSelect = $("create-kurs-fach");
+    fachSelect.innerHTML =
+      '<option value="">(kein Fach)</option>' +
+      schildFaecher
+        .map((f) => `<option value="${f.id}">${escapeHtml(f.kuerzel)} – ${escapeHtml(f.bezeichnung || "")}</option>`)
+        .join("");
+
+    const kursartOptions = new Map();
+    for (const k of schildKursarten) {
+      if (!k.kuerzelAllg) continue;
+      if (!kursartOptions.has(k.kuerzelAllg)) kursartOptions.set(k.kuerzelAllg, k.bezeichnungAllg || "");
+    }
+    const kursartDatalist = $("kursart-datalist");
+    kursartDatalist.innerHTML = Array.from(kursartOptions.entries())
+      .map(([kuerzel, bezeichnung]) => `<option value="${escapeHtml(kuerzel)}">${escapeHtml(bezeichnung)}</option>`)
+      .join("");
   }
 
   function buildDatalists() {
@@ -660,11 +691,15 @@
         <td><input type="text" class="match-input course-match-input" list="kurs-datalist" value="${escapeHtml(inputValue)}" ${ignored ? "disabled" : ""}/></td>
         <td class="match-status">${badgeHtml}</td>
         <td><input type="checkbox" class="ignore-checkbox course-ignore" ${ignored ? "checked" : ""}/></td>
+        <td><button type="button" class="btn-create-kurs-row" title="Neuen Kurs für diesen Forms-Kurstext anlegen">+ Kurs</button></td>
       `;
       tbody.appendChild(tr);
     }
     tbody.querySelectorAll(".course-match-input").forEach((input) => input.addEventListener("change", onCourseMatchInputChange));
     tbody.querySelectorAll(".course-ignore").forEach((cb) => cb.addEventListener("change", onCourseIgnoreChange));
+    tbody.querySelectorAll(".btn-create-kurs-row").forEach((btn) =>
+      btn.addEventListener("click", (evt) => openCreateKursDialog(evt.target.closest("tr").dataset.courseText))
+    );
     applyCourseFilter();
   }
 
@@ -728,6 +763,85 @@
       `${result.matched} automatisch gematcht, ${result.review.length} benötigen manuelle Prüfung.`,
       result.review.length ? "warn" : "ok"
     );
+  }
+
+  /**
+   * Öffnet den "Neuen Kurs anlegen"-Dialog für einen bestimmten Forms-Kurstext (z.B. "S18 Judo").
+   * Kürzel/Zeugnisbezeichnung werden mit dem Text ohne Spalten-Kürzel vorbelegt (siehe Schritt 3a) -
+   * das Kürzel dient nur der internen Unterscheidung, nicht als sinnvoller Kurs-Name in Schild.
+   */
+  function openCreateKursDialog(courseText) {
+    createKursTargetCourseText = courseText;
+    const suggestion = FormsImport.stripKnownPrefix(courseText, state.columnPrefixes).trim();
+    $("create-kurs-source-text").textContent = courseText;
+    $("create-kurs-kuerzel").value = suggestion;
+    $("create-kurs-bezeichnung").value = suggestion;
+    $("create-kurs-fach").value = "";
+    $("create-kurs-kursart").value = "";
+    $("create-kurs-wochenstunden").value = 2;
+    $("create-kurs-sichtbar").checked = true;
+    setStatus($("create-kurs-status"), "", "");
+    $("create-kurs-dialog").showModal();
+    $("create-kurs-kuerzel").focus();
+  }
+
+  function closeCreateKursDialog() {
+    $("create-kurs-dialog").close();
+    createKursTargetCourseText = null;
+  }
+
+  async function onCreateKursFormSubmit(evt) {
+    evt.preventDefault();
+    const kuerzel = $("create-kurs-kuerzel").value.trim();
+    const kursartAllg = $("create-kurs-kursart").value.trim();
+    if (!kuerzel || !kursartAllg) {
+      setStatus($("create-kurs-status"), "Bitte Kürzel und Kursart angeben.", "error");
+      return;
+    }
+    const fachId = $("create-kurs-fach").value ? Number($("create-kurs-fach").value) : null;
+    const bezeichnungZeugnis = $("create-kurs-bezeichnung").value.trim();
+
+    const payload = {
+      idSchuljahresabschnitt: abschnittId,
+      kuerzel,
+      kursartAllg,
+      idFach: fachId,
+      bezeichnungZeugnis: bezeichnungZeugnis || null,
+      wochenstunden: Number($("create-kurs-wochenstunden").value) || 0,
+      istSichtbar: $("create-kurs-sichtbar").checked,
+      idJahrgaenge: [],
+      schienen: [],
+    };
+
+    setStatus($("create-kurs-status"), "Lege Kurs an …", "");
+    $("btn-create-kurs-submit").disabled = true;
+    try {
+      const neuerKurs = await SvwsApi.createKurs(payload);
+      schildKurse.push(neuerKurs);
+      kursById.set(neuerKurs.id, neuerKurs);
+      buildDatalists();
+
+      if (createKursTargetCourseText) {
+        Matching.setMatch(state.kursMatching, createKursTargetCourseText, {
+          targetId: neuerKurs.id,
+          targetLabel: kursLabel(neuerKurs),
+          manual: true,
+        });
+        persist();
+        renderCourseMatchTable();
+      }
+
+      closeCreateKursDialog();
+      setStatus(
+        $("course-match-summary"),
+        `Kurs "${neuerKurs.kuerzel}" angelegt und zugeordnet.`,
+        "ok"
+      );
+    } catch (err) {
+      setStatus($("create-kurs-status"), err.message, "error");
+    } finally {
+      $("btn-create-kurs-submit").disabled = false;
+    }
   }
 
   // ---------- 6. Übertragung ----------
@@ -1073,6 +1187,8 @@
     document.querySelector("#missing-students-table thead").addEventListener("click", onMissingStudentsSortClick);
     updateMissingStudentsSortIndicators();
     $("btn-automatch-courses").addEventListener("click", onAutomatchCourses);
+    $("create-kurs-form").addEventListener("submit", onCreateKursFormSubmit);
+    $("btn-create-kurs-cancel").addEventListener("click", closeCreateKursDialog);
     $("btn-compute-preview").addEventListener("click", onComputePreview);
     $("transfer-select-all").addEventListener("change", onTransferSelectAll);
     $("btn-execute-transfer").addEventListener("click", onExecuteTransfer);

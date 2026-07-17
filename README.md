@@ -69,6 +69,27 @@ vorherige Schritt erledigt ist.
    Tabelle identifiziert wird, fließt aber **nicht** in die Ähnlichkeitssuche nach einem passenden
    Schild-Kurs ein – gesucht wird nur mit dem eigentlichen Kurstext ohne Kürzel, da das Kürzel ja keine
    Bedeutung für die Kursbezeichnung hat und die Trefferqualität sonst unnötig verschlechtern würde.
+
+   Findet sich für einen Forms-Kurstext kein passender Schild-Kurs (z.B. "Judo" wurde in der Umfrage
+   gewählt, existiert aber noch nicht in Schild), legt der Button **"+ Kurs"** am Ende der jeweiligen
+   Zeile über einen Dialog direkt einen neuen Kurs an und ordnet ihn der Zeile sofort zu. Abgefragt werden:
+   - **Kürzel*** (Pflicht) – die eindeutige Kurs-Kennung in Schild, vorbelegt mit dem Forms-Kurstext ohne
+     Spalten-Kürzel (frei editierbar, an die Namenskonvention der eigenen Schule anpassen).
+   - **Zeugnisbezeichnung** (optional, aber empfohlen) – ebenfalls vorbelegt; hilft künftigen
+     Matching-Durchläufen, da Schritt 5 sowohl gegen Kürzel als auch gegen Zeugnisbezeichnung sucht.
+   - **Fach** (optional) – Dropdown aus den in Schritt 2 geladenen Fächern.
+   - **Kursart (allgemein)*** (Pflicht, z.B. `AG`, `GK`, `ZK`) – Eingabefeld mit Autovervollständigung aus
+     dem live von Schild geladenen Kursarten-Katalog; freie Texteingabe ist möglich, falls die gewünschte
+     Kursart dort nicht auftaucht.
+   - **Wochenstunden** (Default 2) und **Sichtbar in Schild** (Checkbox, Default an).
+
+   Fest auf leere Listen gesetzt werden `idJahrgaenge` und `schienen` (laut SVWS-API zwar Pflichtfelder,
+   aber als leeres Array zulässig). Die Felder `schueler` und `weitereLehrer` werden trotz gleicher
+   Pflichtfeld-Kennzeichnung im Schema bewusst **nicht** mitgeschickt – der Server lehnt beide beim Anlegen
+   ab ("Das Patchen des Attributes schueler/weitereLehrer wird nicht unterstützt."), diese Zuordnungen
+   laufen offenbar über einen anderen API-Weg. Der neue Kurs ist also zunächst keinem Jahrgang/keiner
+   Lehrkraft/keinen Schüler:innen direkt zugeordnet und muss dafür ggf. noch in Schild selbst
+   nachbearbeitet werden; für den reinen Zweck dieses Tools (Leistungsdaten anlegen) reicht das bereits.
 6. **Übertragung**: Default-Werte für neu anzulegende Leistungsdaten einstellen (Kursart-Fallback,
    Wochenstunden-Fallback, Zeugnis-Umfang, "Auf Zeugnis", Epochalunterricht). Über "Vorschau berechnen"
    prüft das Tool für jede gematchte Schüler×Kurs-Kombination gegen die tatsächlichen Lernabschnittsdaten,
@@ -183,6 +204,24 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
      (`schuelerIdToKlasse`, in `js/app.js`), ohne über das `idKlasse`-Feld der Schülerliste gehen zu
      müssen – eine Cross-Reference weniger.
 
+4. **"Neuen Kurs anlegen" (Schritt 5) schlägt fehl** – Fehlermeldung: "Das Patchen des Attributes
+   schueler/weitereLehrer wird nicht unterstützt."
+   Ursache: Obwohl `schueler` und `weitereLehrer` laut OpenAPI-Schema von `KursDaten` Pflichtfelder sind,
+   lehnt `POST /kurse/create` beide serverseitig ab, wenn sie im Request-Body enthalten sind –
+   Schüler-/Lehrer-Zuordnungen zu einem Kurs laufen offenbar über einen separaten API-Weg, nicht über das
+   direkte Setzen dieser Felder beim Anlegen.
+   **Fix, zweistufig:**
+   - `schueler` und `weitereLehrer` werden beim Aufbau des Kurs-Anlage-Payloads in
+     `onCreateKursFormSubmit()` (`js/app.js`) nicht mehr mitgeschickt.
+   - Generischer als der Einzelfall: `SvwsApi`s `request()`-Funktion (`js/svwsApi.js`) hat bislang bei
+     Fehlerantworten (`!response.ok`) nur eine pauschale, statuscode-basierte Meldung geworfen und den
+     Antwort-Body nie gelesen – die eigentliche, oft sehr konkrete Server-Rückmeldung (egal ob JSON oder
+     Klartext) ging verloren. Neue Hilfsfunktion `buildErrorMessage(response, url)` liest den Body,
+     versucht ihn als JSON zu parsen (`message`/`error`-Feld bzw. vollständiges Objekt) und fällt sonst auf
+     den Rohtext zurück; das Ergebnis hängt sie an die bestehende Statuscode-Meldung an. Dadurch werden
+     künftige Server-Fehler dieser Art direkt im Fehlertext sichtbar, ohne dass jeder Einzelfall im Code
+     abgefangen werden muss.
+
 ## Programmstruktur
 
 ```text
@@ -211,11 +250,14 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getKurse(abschnittId)` | `GET /kurse/abschnitt/{id}` | Kursliste des Abschnitts |
 | `getKlassen(abschnittId)` | `GET /klassen/details/abschnitt/{id}` | Klassenliste inkl. `schueler[]` je Klasse (für Klassen-Kürzel je Schüler) |
 | `getFaecher()` | `GET /faecher` | Fächerliste |
+| `getKursarten()` | `GET /kurse/allgemein/kursarten` | Katalog gültiger Kursarten (für "Neuen Kurs anlegen"-Dialog) |
+| `createKurs(kursDaten)` | `POST /kurse/create` | Legt einen neuen Kurs an, gibt ihn inkl. neuer ID zurück |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
-Netzwerkfehler mit Zertifikats-Hinweis).
+Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
+Server-Rückmeldung aus dem Antwort-Body an (JSON oder Klartext, je nachdem was der Server liefert).
 
 ### `js/formsImport.js`
 
@@ -270,6 +312,17 @@ Funktionen rund um Schritt 3a (Spaltenkürzel):
 - `recomputeSelectionsAndRender()`: ruft `FormsImport.extractSelections()` mit der aktuellen
   Spaltenzuordnung *und* den aktuellen Kürzeln neu auf und rendert Schritt 4 + 5 neu. Wird sowohl nach
   "Auswahl übernehmen" (Schritt 3) als auch nach "Kürzel übernehmen" (Schritt 3a) aufgerufen.
+
+Funktionen rund um den "Neuen Kurs anlegen"-Dialog in Schritt 5:
+
+- `populateCreateKursDialogOptions()`: befüllt das Fach-Dropdown und die Kursarten-Datalist im Dialog aus
+  den in Schritt 2 geladenen Fächern/Kursarten. Wird nach jedem "Schild-Daten laden" neu aufgerufen.
+- `openCreateKursDialog(courseText)` / `closeCreateKursDialog()`: öffnen bzw. schließen den nativen
+  `<dialog>` und merken sich in `createKursTargetCourseText`, für welche Tabellenzeile er geöffnet wurde.
+- `onCreateKursFormSubmit(evt)`: baut aus den Formularfeldern das `KursDaten`-Objekt, ruft
+  `SvwsApi.createKurs()` auf und übernimmt bei Erfolg den neuen Kurs in `schildKurse`/`kursById`, die
+  Datalist (`buildDatalists()`) sowie direkt als Treffer für `createKursTargetCourseText` in
+  `state.kursMatching` - ganz ohne Umweg über "Automatisch matchen" oder manuelle Auswahl.
 
 Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen während der Entwicklung" oben:
 

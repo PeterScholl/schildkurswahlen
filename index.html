@@ -165,12 +165,43 @@
 
   <div class="table-scroll">
     <table id="course-match-table">
-      <thead><tr><th>Forms-Kurstext</th><th>Schild-Kurs</th><th>Status</th><th>Ignorieren</th></tr></thead>
+      <thead><tr><th>Forms-Kurstext</th><th>Schild-Kurs</th><th>Status</th><th>Ignorieren</th><th>Aktion</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
   <datalist id="kurs-datalist"></datalist>
 </section>
+
+<dialog id="create-kurs-dialog">
+  <form id="create-kurs-form" method="dialog">
+    <h3>Neuen Kurs anlegen</h3>
+    <p class="hint">Für Forms-Kurstext: <strong id="create-kurs-source-text"></strong></p>
+    <div class="grid-form">
+      <label>Kürzel <small>(Pflichtfeld, eindeutige Kurs-Kennung in Schild)</small>
+        <input type="text" id="create-kurs-kuerzel" required maxlength="30" />
+      </label>
+      <label>Zeugnisbezeichnung <small>(optional, hilft beim künftigen automatischen Matching)</small>
+        <input type="text" id="create-kurs-bezeichnung" />
+      </label>
+      <label>Fach <small>(optional)</small>
+        <select id="create-kurs-fach"><option value="">(kein Fach)</option></select>
+      </label>
+      <label>Kursart (allgemein) <small>(Pflichtfeld, z.B. AG, GK, ZK)</small>
+        <input type="text" id="create-kurs-kursart" list="kursart-datalist" required />
+        <datalist id="kursart-datalist"></datalist>
+      </label>
+      <label>Wochenstunden
+        <input type="number" id="create-kurs-wochenstunden" min="0" value="2" />
+      </label>
+      <label><input type="checkbox" id="create-kurs-sichtbar" checked /> Sichtbar in Schild</label>
+    </div>
+    <span id="create-kurs-status" class="status-msg"></span>
+    <div class="dialog-actions">
+      <button type="button" id="btn-create-kurs-cancel" class="btn-secondary">Abbrechen</button>
+      <button type="submit" id="btn-create-kurs-submit">Kurs anlegen</button>
+    </div>
+  </form>
+</dialog>
 
 <section id="section-transfer" class="card hidden">
   <h2>6. Übertragung</h2>

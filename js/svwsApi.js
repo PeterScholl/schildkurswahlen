@@ -64,11 +64,32 @@
       );
     }
     if (!response.ok) {
-      throw new Error(friendlyError(response.status, url));
+      throw new Error(await buildErrorMessage(response, url));
     }
     if (response.status === 204) return null;
     const text = await response.text();
     return text ? JSON.parse(text) : null;
+  }
+
+  /** Baut aus einer Fehlerantwort eine Meldung inkl. Server-Rückmeldung, egal ob diese JSON oder
+   *  Klartext ist (z.B. "Das Patchen des Attributes X wird nicht unterstützt."). */
+  async function buildErrorMessage(response, url) {
+    const base = friendlyError(response.status, url);
+    let bodyText = "";
+    try {
+      bodyText = await response.text();
+    } catch {
+      // Body nicht lesbar -> ohne Detail fortfahren
+    }
+    if (!bodyText) return base;
+    let detail = bodyText;
+    try {
+      const parsed = JSON.parse(bodyText);
+      detail = parsed.message || parsed.error || JSON.stringify(parsed);
+    } catch {
+      // keine JSON-Antwort -> Rohtext unverändert als Detail verwenden
+    }
+    return `${base} Rückmeldung des Servers: "${detail}"`;
   }
 
   async function getStammdaten() {
@@ -97,6 +118,15 @@
 
   async function getFaecher() {
     return request("GET", "/faecher");
+  }
+
+  async function getKursarten() {
+    return request("GET", "/kurse/allgemein/kursarten");
+  }
+
+  /** Erstellt einen neuen Kurs und gibt die von Schild vergebenen Daten (inkl. neuer ID) zurück. */
+  async function createKurs(kursDaten) {
+    return request("POST", "/kurse/create", kursDaten);
   }
 
   /** Liefert KlassenDaten inkl. eingebettetem `schueler[]`-Array je Klasse (Kürzel + Mitglieder).
@@ -131,6 +161,8 @@
     getKurse,
     getFaecher,
     getKlassen,
+    getKursarten,
+    createKurs,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,

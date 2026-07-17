@@ -249,3 +249,31 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); 
 }
 
 footer { color: var(--muted); font-size: 0.85rem; text-align: center; }
+
+.btn-create-kurs-row {
+  background: transparent;
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+dialog#create-kurs-dialog {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  background: var(--card-bg);
+  color: var(--text);
+  max-width: 32rem;
+  width: 90vw;
+}
+dialog#create-kurs-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+dialog#create-kurs-dialog h3 { margin-top: 0; }
+dialog#create-kurs-dialog .grid-form { grid-template-columns: 1fr; }
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
