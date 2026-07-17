@@ -238,6 +238,7 @@
           : "";
       setStatus(statusEl, "Fertig." + klassenHinweis + pruneHinweis, klassenHinweis || pruneHinweis ? "warn" : "ok");
       reveal("section-forms-import");
+      reveal("section-nachbereitung");
       buildDatalists();
       populateCreateKursDialogOptions();
     } catch (err) {
@@ -1257,6 +1258,113 @@
     location.reload();
   }
 
+  // ---------- 8. Nachbereitung ----------
+
+  let checkLeererKursResults = []; // [{schuelerId, schuelerLabel, fachLabel, kursart, leistungsdatenId}]
+
+  async function onRunCheckLeererKurs() {
+    if (schildSchueler.length === 0) {
+      setStatus($("check-leerer-kurs-status"), "Bitte zuerst in Schritt 2 Schild-Daten laden.", "error");
+      return;
+    }
+    const statusEl = $("check-leerer-kurs-status");
+    const progressEl = $("check-leerer-kurs-progress");
+    const total = schildSchueler.length;
+    let processed = 0;
+    progressEl.max = total;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+    setStatus(statusEl, `Prüfe 0 / ${total} Schüler:innen …`, "");
+    $("btn-run-check-leerer-kurs").disabled = true;
+
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    const gueltigeKursIds = new Set(kursById.keys());
+    const results = [];
+    let fehler = 0;
+    await mapWithConcurrency(schildSchueler, 6, async (schueler) => {
+      try {
+        const lad = await SvwsApi.getLernabschnittsdaten(schueler.id, abschnittId);
+        for (const eintrag of Check.CHECKS.leistungsdatenLeererKurs.findIssues(lad, gueltigeKursIds)) {
+          const fach = fachById.get(eintrag.fachID);
+          results.push({
+            schuelerId: schueler.id,
+            schuelerLabel: schuelerLabel(schueler),
+            fachLabel: fach ? `${fach.kuerzel} – ${fach.bezeichnung || ""}` : `Fach-ID ${eintrag.fachID}`,
+            kursart: eintrag.kursart,
+            kursIdHinweis: eintrag.kursID == null ? "– (leer)" : `${eintrag.kursID} (existiert nicht mehr)`,
+            leistungsdatenId: eintrag.id,
+          });
+        }
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Prüfe ${processed} / ${total} Schüler:innen … (${results.length} Treffer bisher)`, "");
+      }
+    });
+
+    progressEl.classList.add("hidden");
+    checkLeererKursResults = results;
+    renderCheckLeererKursTable();
+    $("btn-run-check-leerer-kurs").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} betroffene Leistungsdaten-Einträge gefunden${fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : ""}.`,
+      results.length ? "warn" : "ok"
+    );
+  }
+
+  function renderCheckLeererKursTable() {
+    const tbody = document.querySelector("#check-leerer-kurs-table tbody");
+    tbody.innerHTML = checkLeererKursResults
+      .map(
+        (r) => `
+      <tr>
+        <td><input type="checkbox" class="check-leerer-kurs-row" data-id="${r.leistungsdatenId}" checked /></td>
+        <td>${escapeHtml(r.schuelerLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.kursart)}</td>
+        <td>${escapeHtml(r.kursIdHinweis)}</td>
+        <td>${r.leistungsdatenId}</td>
+      </tr>`
+      )
+      .join("");
+    $("check-leerer-kurs-select-all").checked = checkLeererKursResults.length > 0;
+    $("btn-delete-check-leerer-kurs").disabled = checkLeererKursResults.length === 0;
+  }
+
+  function onCheckLeererKursSelectAll(evt) {
+    document.querySelectorAll(".check-leerer-kurs-row").forEach((cb) => (cb.checked = evt.target.checked));
+  }
+
+  async function onDeleteCheckLeererKurs() {
+    const checked = Array.from(document.querySelectorAll(".check-leerer-kurs-row:checked"));
+    if (checked.length === 0) return;
+    const sicher = confirm(
+      `${checked.length} Leistungsdaten-Einträge wirklich unwiderruflich in Schild löschen? Das kann nicht rückgängig gemacht werden.`
+    );
+    if (!sicher) return;
+
+    const ids = checked.map((cb) => Number(cb.dataset.id));
+    const log = $("check-leerer-kurs-log");
+    log.textContent = `Lösche ${ids.length} Leistungsdaten-Einträge …\n`;
+    $("btn-delete-check-leerer-kurs").disabled = true;
+    try {
+      await SvwsApi.deleteLeistungsdatenMultiple(ids);
+      const idSet = new Set(ids);
+      checkLeererKursResults = checkLeererKursResults.filter((r) => !idSet.has(r.leistungsdatenId));
+      renderCheckLeererKursTable();
+      log.textContent += `${ids.length} Einträge erfolgreich gelöscht.\n`;
+      setStatus($("check-leerer-kurs-status"), `${ids.length} Einträge gelöscht.`, "ok");
+    } catch (err) {
+      log.textContent += `FEHLER – ${err.message}\n`;
+      setStatus($("check-leerer-kurs-status"), "Löschen fehlgeschlagen, siehe Protokoll.", "error");
+    } finally {
+      $("btn-delete-check-leerer-kurs").disabled = checkLeererKursResults.length === 0;
+    }
+  }
+
   // ---------- Initialisierung ----------
 
   function init() {
@@ -1292,6 +1400,10 @@
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);
     $("btn-reset-state").addEventListener("click", onResetState);
+
+    $("btn-run-check-leerer-kurs").addEventListener("click", onRunCheckLeererKurs);
+    $("check-leerer-kurs-select-all").addEventListener("change", onCheckLeererKursSelectAll);
+    $("btn-delete-check-leerer-kurs").addEventListener("click", onDeleteCheckLeererKurs);
 
     document.querySelectorAll("#student-status-filter input").forEach((cb) => cb.addEventListener("change", applyStudentFilter));
     document.querySelectorAll("#course-status-filter input").forEach((cb) => cb.addEventListener("change", applyCourseFilter));

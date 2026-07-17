@@ -153,6 +153,11 @@
     return request("POST", "/schueler/leistungsdaten/create", einzelDatensatz);
   }
 
+  /** Löscht mehrere Leistungsdaten anhand ihrer IDs, gibt die gelöschten Datensätze zurück. */
+  async function deleteLeistungsdatenMultiple(ids) {
+    return request("DELETE", "/schueler/leistungsdaten/delete/multiple", ids);
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -171,5 +176,6 @@
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,
+    deleteLeistungsdatenMultiple,
   };
 })(window);

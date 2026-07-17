@@ -121,6 +121,20 @@ vorherige Schritt erledigt ist.
    zu sichern. Über "Zustand zurücksetzen" (mit Sicherheitsabfrage) lässt sich der komplette gespeicherte
    Zustand löschen und ganz von vorne beginnen – z.B. nach einem Testlauf mit falschen Daten oder zu Beginn
    einer neuen Umfragerunde im nächsten Halbjahr.
+8. **Nachbereitung** (sichtbar sobald Schritt 2 abgeschlossen ist, unabhängig vom restlichen
+   Forms-Abgleich): Sammelstelle für Kontrollen auf dem aktuellen Schild-Datenbestand, z.B. um
+   Datenreste aus früheren, fehlgeschlagenen Übertragungen aufzuspüren. Aktuell verfügbar:
+   **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
+   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht
+   mehr existierenden Kurs zeigt – letzteres z.B. bei doppelt angelegten Einträgen für dasselbe Fach, bei
+   denen einer der beiden Kurse zwischenzeitlich in Schild gelöscht wurde (reiner Klassenunterricht ohne
+   Kursart wird nicht gemeldet). Über "Prüfen" werden alle in Schritt 2 geladenen Schüler:innen
+   durchsucht (bei größeren Schulen können das über 1000 sein – Fortschrittsbalken und Statustext zeigen
+   laufend an, wie viele bereits geprüft wurden und wie viele Treffer es bisher gibt); Treffer erscheinen
+   in einer Tabelle mit Auswahl-Checkboxen (alle vorausgewählt, inkl.
+   Anzeige der betroffenen Kurs-ID), über "Ausgewählte löschen" (mit Sicherheitsabfrage) lassen sich die
+   markierten Leistungsdaten-Einträge dauerhaft aus Schild entfernen. Weitere Kontrollen lassen sich über
+   `js/check.js` ergänzen.
 
 ## Wichtige Entscheidungen
 
@@ -250,17 +264,33 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    unabhängig davon, was sich in der Zwischenzeit in Schild geändert hatte.
    **Fix:** `onComputePreview()` (`js/app.js`) leert `lernabschnittsdatenCache` jetzt zu Beginn jedes Laufs.
 
+6. **"Leistungsdaten mit leerem Kurs" (Schritt 8) fand bei mehreren fast identischen Einträgen eines
+   Fachs systematisch einen weniger, als tatsächlich betroffen waren.**
+   Ursache: Der erste Wurf des Checks filterte auf `kursID == null`. Ein konkreter, vom Nutzer gelieferter
+   Datensatz zeigte aber, dass **alle** Leistungsdaten-Einträge eine `kursID` trugen – auch der als "leer"
+   wahrgenommene. Der Fall war: dasselbe Fach zweimal vergeben, mit zwei unterschiedlichen `kursID`-Werten
+   (Duplikat), von denen einer auf einen zwischenzeitlich in Schild gelöschten Kurs zeigte. Ein gesetztes,
+   aber nicht mehr auflösbares `kursID` erscheint in Schild ebenfalls als leeres Kurs-Feld, wurde vom
+   ursprünglichen `kursID == null`-Filter aber gar nicht erst erfasst – die alte Logik hätte bei diesem
+   Datensatz **null** Treffer gefunden, nicht "einen zu wenig".
+   **Fix:** `findeLeistungsdatenMitLeeremKurs()` (`js/check.js`) bekommt zusätzlich `gueltigeKursIds` (ein
+   `Set` der aktuell in Schild existierenden Kurs-IDs, aus `kursById` in `js/app.js`) übergeben und meldet
+   jetzt beide Fälle: `kursID == null` **oder** `kursID` gesetzt, aber nicht in `gueltigeKursIds` enthalten.
+   Die Ergebnistabelle in Schritt 8 zeigt zusätzlich eine Kurs-ID-Spalte, damit der Unterschied zwischen
+   "leer" und "verweist auf gelöschten Kurs" sichtbar ist.
+
 ## Programmstruktur
 
 ```text
 SchildKurswahlen/
-  index.html                  UI-Grundgerüst des Wizards (7 Abschnitte)
+  index.html                  UI-Grundgerüst des Wizards (8 Abschnitte)
   css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung)
   js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing)
   js/svwsApi.js                SVWS-REST-Client
   js/formsImport.js            xlsx-Einlesen, Spalten-Heuristik, Kurswahl-Extraktion
   js/matching.js                Fuzzy-Matching + Verwaltung der persistenten Matching-Tabellen
   js/storage.js                localStorage-Autosave + JSON-Export/Import (ohne Zugangsdaten)
+  js/check.js                  Nachbereitungs-Kontrollen (Schritt 8), reine Analyse-Funktionen
   js/app.js                    Orchestrierung: verdrahtet UI-Events mit den obigen Modulen
   testdaten/                  Beispiel-Forms-Export zum Testen
 ```
@@ -283,6 +313,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `createKurs(kursDaten)` | `POST /kurse/create` | Legt einen neuen Kurs an, gibt ihn inkl. neuer ID zurück |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
+| `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch, Schritt 8) |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -330,6 +361,23 @@ Server-Rückmeldung aus dem Antwort-Body an (JSON oder Klartext, je nachdem was 
 - `exportJson(state)` / `importJson(file)` für den manuellen JSON-Export/Import.
 - `stripSecrets(obj)`: entfernt rekursiv jedes Feld, dessen Name wie ein Passwort aussieht – wird vor
   jedem Speichern/Export aufgerufen.
+
+### `js/check.js`
+
+Analog zu `matching.js`/`formsImport.js` bewusst als reine Funktionen ohne eigenen Zustand und ohne
+API-Zugriff gehalten – das Holen der Daten übernimmt `app.js`, hier steckt nur die Analyse-Logik, damit sie
+sich isoliert testen lässt (siehe Node-Testskripte während der Entwicklung) und sich künftig leicht um
+weitere Kontrollen ergänzen lässt.
+
+- `findeLeistungsdatenMitLeeremKurs(lernabschnittsdaten, gueltigeKursIds)`: liefert die
+  Leistungsdaten-Einträge eines Lernabschnitts, die eine `kursart` tragen (also ursprünglich einem Kurs
+  zugeordnet waren), deren `kursID` aber entweder `null` ist **oder** nicht in `gueltigeKursIds` (Set der
+  aktuell in Schild existierenden Kurs-IDs) vorkommt. Der zweite Fall wurde erst im Nachhinein ergänzt: ein
+  gesetztes `kursID`, das auf einen inzwischen gelöschten Kurs zeigt, ist genauso "leer" wie `kursID: null`
+  – zeigt sich in Schild aber identisch als leeres Kurs-Feld. Ohne den Vergleich gegen `gueltigeKursIds`
+  wären solche hängenden Referenzen unentdeckt geblieben (siehe "Fehlerbehebungen" unten).
+- `CHECKS`: Registry aller Nachbereitungs-Kontrollen (`{id, label, findIssues}`) für eine generische
+  Bedienoberfläche in Schritt 8; aktuell ein Eintrag (`leistungsdatenLeererKurs`).
 
 ### `js/app.js`
 
@@ -385,6 +433,16 @@ Statusfilter in Schritt 4/5:
   Neuberechnung der Tabelle). `setStudentFilterOnly()`/`setCourseFilterOnly()` setzen die Checkboxen für
   die Schnellzugriffs-Buttons ("Nur unsichere anzeigen"/"Alle anzeigen"). Eine Zeile mit ungültiger,
   gerade eingetippter Eingabe wird unabhängig vom Filter immer angezeigt, damit sie nicht "verschwindet".
+
+Funktionen rund um Schritt 8 (Nachbereitung):
+
+- `onRunCheckLeererKurs()`: holt konkurrenzbegrenzt (`mapWithConcurrency`) die Lernabschnittsdaten aller
+  in Schritt 2 geladenen Schüler:innen, wendet `Check.CHECKS.leistungsdatenLeererKurs.findIssues()` an und
+  sammelt Treffer in `checkLeererKursResults`.
+- `renderCheckLeererKursTable()`: rendert die Ergebnistabelle mit vorausgewählten Checkboxen pro Zeile.
+- `onDeleteCheckLeererKurs()`: fragt vor dem Löschen per `confirm()` nach, ruft dann
+  `SvwsApi.deleteLeistungsdatenMultiple()` mit den ausgewählten IDs auf und entfernt erfolgreich gelöschte
+  Zeilen aus der Tabelle.
 
 ## Bekannte Grenzen / mögliche Erweiterungen
 

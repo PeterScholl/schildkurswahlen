@@ -268,6 +268,44 @@
   <span id="save-load-status" class="status-msg"></span>
 </section>
 
+<section id="section-nachbereitung" class="card hidden">
+  <h2>8. Nachbereitung</h2>
+  <p class="hint">
+    Kontrollen auf den in Schritt 2 geladenen Schild-Daten, unabhängig vom Forms-Abgleich – z.B. um
+    Datenreste aus früheren, fehlgeschlagenen Übertragungen aufzuspüren.
+  </p>
+
+  <h3>Leistungsdaten mit leerem Kurs</h3>
+  <p class="hint">
+    Findet Leistungsdaten-Einträge, die eine Kursart tragen (also ursprünglich einem Kurs zugeordnet
+    waren), deren Kurs-Verknüpfung aber fehlt <em>oder</em> auf einen nicht mehr existierenden Kurs zeigt
+    – letzteres z.B. bei doppelt angelegten Einträgen für dasselbe Fach, bei denen einer der beiden Kurse
+    zwischenzeitlich in Schild gelöscht wurde (Schild zeigt den Kurs dann als leer an, obwohl technisch
+    eine Kurs-ID hinterlegt ist). Normaler Klassenunterricht (ohne Kursart) wird nicht gemeldet.
+  </p>
+  <button id="btn-run-check-leerer-kurs">Prüfen</button>
+  <span id="check-leerer-kurs-status" class="status-msg"></span>
+  <progress id="check-leerer-kurs-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div class="table-scroll">
+    <table id="check-leerer-kurs-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="check-leerer-kurs-select-all" /></th>
+          <th>Schüler</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>Kurs-ID</th>
+          <th>Leistungsdaten-ID</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button id="btn-delete-check-leerer-kurs" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <div id="check-leerer-kurs-log" class="log"></div>
+</section>
+
 </main>
 
 <footer>
@@ -279,6 +317,7 @@
 <script src="js/formsImport.js"></script>
 <script src="js/matching.js"></script>
 <script src="js/storage.js"></script>
+<script src="js/check.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
