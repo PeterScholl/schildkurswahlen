@@ -48,8 +48,12 @@
   function persist() { Storage.scheduleSave(state); }
 
   function schuelerLabel(s) {
-    const klasse = s.jahrgang ? ` (${s.jahrgang})` : "";
-    return `${s.nachname}, ${s.vorname}${klasse} [${s.id}]`;
+    const jahrgang = s.jahrgang || "";
+    const klasse = schuelerIdToKlasse.get(s.id) || "";
+    let suffix = "";
+    if (jahrgang && klasse) suffix = ` (${jahrgang}-${klasse})`;
+    else if (jahrgang || klasse) suffix = ` (${jahrgang || klasse})`;
+    return `${s.nachname}, ${s.vorname}${suffix} [${s.id}]`;
   }
 
   function kursLabel(k) {
@@ -1197,6 +1201,12 @@
     bindTransferDefaultInputs();
 
     $("btn-connect").addEventListener("click", onConnect);
+    $("section-connection").addEventListener("keydown", (evt) => {
+      if (evt.key === "Enter" && evt.target.tagName === "INPUT") {
+        evt.preventDefault();
+        onConnect();
+      }
+    });
     $("btn-load-schild-data").addEventListener("click", onLoadSchildData);
     $("forms-file-input").addEventListener("change", onFormsFileSelected);
     $("btn-apply-mapping").addEventListener("click", onApplyMapping);
