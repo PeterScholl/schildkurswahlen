@@ -16,6 +16,7 @@
       connection: { host: "", schema: "", username: "", jahr: new Date().getFullYear(), abschnitt: 1 },
       statusFilter: [],
       columnMapping: { nameCol: null, courseCols: [] },
+      columnPrefixes: {}, // Spaltenindex (als String) -> Kürzel, das dem Kurstext vorangestellt wird
       schuelerMatching: {},
       kursMatching: {},
       leistungsdatenDefaults: {
@@ -50,6 +51,7 @@
       ...loaded,
       connection: { ...defaults.connection, ...(loaded.connection || {}) },
       columnMapping: { ...defaults.columnMapping, ...(loaded.columnMapping || {}) },
+      columnPrefixes: loaded.columnPrefixes || {},
       leistungsdatenDefaults: { ...defaults.leistungsdatenDefaults, ...(loaded.leistungsdatenDefaults || {}) },
       schuelerMatching: loaded.schuelerMatching || {},
       kursMatching: loaded.kursMatching || {},

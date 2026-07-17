@@ -29,6 +29,13 @@ vorherige Schritt erledigt ist.
    Spaltenzuordnung: eine Spalte als "Name" markieren, beliebig viele Spalten als "Kurswahl-Spalten"
    (Checkboxen, mit automatischer Vorauswahl anhand einfacher Heuristiken). Jede nicht-leere Zelle einer
    gewählten Kurswahl-Spalte zählt als eine Kurswahl der jeweiligen Person.
+3a. **Spaltenkürzel für Kurswahl-Spalten**: Jede Kurswahl-Spalte bekommt ein Kürzel (Standard:
+   `S<Spaltennummer>`, z.B. `S7`), das dem Kurstext beim Matching vorangestellt wird. Damit lässt sich
+   z.B. "Rudern" aus Spalte 7 einem anderen Schild-Kurs zuordnen als "Rudern" aus Spalte 9 (unterschiedliche
+   Kürzel), oder bewusst zusammenfassen (gleiches Kürzel für beide Spalten – z.B. wenn zwei Spalten
+   tatsächlich denselben Kurs meinen). Ein leeres Kürzel-Feld lässt den Text unverändert wie bisher. Über
+   "Kürzel übernehmen" werden die Kurswahl-Texte (und damit die Tabellen in Schritt 4/5) mit den neuen
+   Kürzeln neu berechnet. Die Kürzel werden persistiert (localStorage + JSON-Export).
 4. **Abgleich Schüler**: Pro erkanntem Forms-Namen wird automatisch der ähnlichste Schild-Schüler
    vorgeschlagen (mit Konfidenz-Prozentwert). Über "Automatisch matchen" werden alle Vorschläge mit hoher
    Sicherheit sofort fest übernommen; unsichere Fälle bleiben zur manuellen Kontrolle stehen. Die
@@ -58,6 +65,10 @@ vorherige Schritt erledigt ist.
    20 Zuordnungen treffen, nicht 500). Auch hier lassen sich Werte wie "kein Angebot" oder "Lernzeit"
    bewusst ignorieren, falls sie keinem echten Schild-Kurs entsprechen. Dieselben Status-Filter und der
    "Nur unsichere anzeigen"-Button stehen auch hier zur Verfügung.
+   Das Spalten-Kürzel aus Schritt 3a (z.B. "S9") bleibt zwar Teil des Textes, mit dem der Eintrag in der
+   Tabelle identifiziert wird, fließt aber **nicht** in die Ähnlichkeitssuche nach einem passenden
+   Schild-Kurs ein – gesucht wird nur mit dem eigentlichen Kurstext ohne Kürzel, da das Kürzel ja keine
+   Bedeutung für die Kursbezeichnung hat und die Trefferqualität sonst unnötig verschlechtern würde.
 6. **Übertragung**: Default-Werte für neu anzulegende Leistungsdaten einstellen (Kursart-Fallback,
    Wochenstunden-Fallback, Zeugnis-Umfang, "Auf Zeugnis", Epochalunterricht). Über "Vorschau berechnen"
    prüft das Tool für jede gematchte Schüler×Kurs-Kombination gegen die tatsächlichen Lernabschnittsdaten,
@@ -212,8 +223,15 @@ Netzwerkfehler mit Zertifikats-Hinweis).
 - `suggestColumnMapping(headers, rows)` schlägt Namens-/Kurswahl-Spalten anhand einfacher Heuristiken vor
   (Metadaten-Spalten wie ID/Zeitstempel werden ausgeschlossen, Spalten mit überwiegend kurzen Texten ohne
   Zahlen/Datumswerte werden vorgeschlagen).
-- `extractSelections(parsed, mapping)` liefert pro Zeile `{formsName, courses[]}`.
+- `extractSelections(parsed, mapping)` liefert pro Zeile `{formsName, courses[]}`. `mapping.columnPrefixes`
+  (Spaltenindex als String -> Kürzel) wird dabei jedem Zellwert vorangestellt, sofern für die Spalte ein
+  nicht-leeres Kürzel hinterlegt ist (siehe Schritt 3a).
 - `distinctCourseTexts(selections)` liefert die Menge aller unterschiedlichen Kurswahl-Texte.
+- `defaultColumnPrefix(colIdx)` liefert das Standard-Kürzel `S<Spaltennummer>` (1-indiziert) für eine
+  Kurswahl-Spalte.
+- `stripKnownPrefix(text, columnPrefixes)` entfernt ein bekanntes Spalten-Kürzel samt Leerzeichen vom
+  Anfang eines Textes (falls vorhanden) – für die Ähnlichkeitssuche in Schritt 5, die vom Kürzel nichts
+  wissen soll.
 
 ### `js/matching.js`
 
@@ -222,6 +240,10 @@ Netzwerkfehler mit Zertifikats-Hinweis).
 - `suggestStudentMatches` / `suggestCourseMatches`: liefern die besten Kandidaten für einen Text.
 - `autoMatchStudents` / `autoMatchCourses`: matchen eine ganze Liste auf einmal, tragen sichere Treffer in
   die übergebene Matching-Tabelle ein und liefern die unsicheren Fälle zur manuellen Prüfung zurück.
+  `autoMatch()` (intern) trennt bewusst Speicherschlüssel (immer die Original-Query) und Suchtext
+  (optional über `searchTextFn` ableitbar) - so nutzt `app.js` beim Kurs-Matching den Speicherschlüssel
+  inkl. Spalten-Kürzel, die Ähnlichkeitssuche aber den Text ohne Kürzel (via
+  `FormsImport.stripKnownPrefix()`).
 - Matching-Tabellen sind einfache Objekte `{ [normalisierterSchlüssel]: {targetId, targetLabel, manual,
   ignored} }` – bewusst ohne eigenen Zustand in diesem Modul, damit sie 1:1 in `storage.js` persistiert
   werden können.
@@ -240,6 +262,14 @@ Hält den nicht-persistenten Laufzeitzustand (geladene Schild-Daten, geparste Fo
 Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs der `index.html` mit den obigen
 Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung über
 `Storage.scheduleSave(state)` gesichert.
+
+Funktionen rund um Schritt 3a (Spaltenkürzel):
+
+- `ensureDefaultColumnPrefixes(courseCols)`: setzt für neue Kurswahl-Spalten das Standard-Kürzel
+  `S<Spaltennummer>`; bereits vergebene (auch bewusst geleerte) Kürzel bleiben unangetastet.
+- `recomputeSelectionsAndRender()`: ruft `FormsImport.extractSelections()` mit der aktuellen
+  Spaltenzuordnung *und* den aktuellen Kürzeln neu auf und rendert Schritt 4 + 5 neu. Wird sowohl nach
+  "Auswahl übernehmen" (Schritt 3) als auch nach "Kürzel übernehmen" (Schritt 3a) aufgerufen.
 
 Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen während der Entwicklung" oben:
 

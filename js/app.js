@@ -282,6 +282,31 @@
     });
   }
 
+  /** Legt für Kurswahl-Spalten ohne bisheriges Kürzel den Standard "S<Spaltennummer>" fest;
+   *  bereits vergebene Kürzel (auch bewusst leere) bleiben unangetastet. */
+  function ensureDefaultColumnPrefixes(courseCols) {
+    for (const idx of courseCols) {
+      const key = String(idx);
+      if (!(key in state.columnPrefixes)) {
+        state.columnPrefixes[key] = FormsImport.defaultColumnPrefix(idx);
+      }
+    }
+  }
+
+  /** Extrahiert Auswahl/Kurstexte (inkl. Spaltenkürzel) neu und rendert die davon abhängigen
+   *  Tabellen (Schritt 4 + 5) neu. Wird nach jeder Änderung an Spaltenzuordnung oder
+   *  Spaltenkürzeln aufgerufen. */
+  function recomputeSelectionsAndRender() {
+    const selections = FormsImport.extractSelections(formsParsed, {
+      ...state.columnMapping,
+      columnPrefixes: state.columnPrefixes,
+    });
+    studentEntries = groupSelectionsByName(selections);
+    distinctCourseTexts = FormsImport.distinctCourseTexts(selections);
+    renderStudentMatchTable();
+    renderCourseMatchTable();
+  }
+
   function onApplyMapping() {
     const nameCol = Number(document.querySelector('input[name="name-col"]:checked')?.value ?? -1);
     const courseCols = Array.from(document.querySelectorAll('input[name="course-col"]:checked')).map((i) =>
@@ -292,11 +317,10 @@
       return;
     }
     state.columnMapping = { nameCol, courseCols };
+    ensureDefaultColumnPrefixes(courseCols);
     persist();
 
-    const selections = FormsImport.extractSelections(formsParsed, state.columnMapping);
-    studentEntries = groupSelectionsByName(selections);
-    distinctCourseTexts = FormsImport.distinctCourseTexts(selections);
+    recomputeSelectionsAndRender();
 
     setStatus(
       $("forms-mapping-status"),
@@ -304,12 +328,42 @@
       "ok"
     );
 
-    renderStudentMatchTable();
-    renderCourseMatchTable();
+    renderColumnPrefixEditor();
+    reveal("section-column-prefixes");
     reveal("section-student-matching");
     reveal("section-missing-students");
     reveal("section-course-matching");
     reveal("section-transfer");
+  }
+
+  function renderColumnPrefixEditor() {
+    const container = $("column-prefix-container");
+    container.innerHTML = "";
+    for (const idx of state.columnMapping.courseCols) {
+      const header = formsParsed.headers[idx] || `(Spalte ${idx + 1})`;
+      const key = String(idx);
+      const value = state.columnPrefixes[key] ?? FormsImport.defaultColumnPrefix(idx);
+      const row = document.createElement("div");
+      row.className = "column-prefix-row";
+      row.innerHTML = `
+        <span class="column-prefix-header">${escapeHtml(header)}</span>
+        <input type="text" class="column-prefix-input" data-col-idx="${idx}" value="${escapeHtml(value)}" placeholder="(kein Kürzel)" />
+      `;
+      container.appendChild(row);
+    }
+  }
+
+  function onApplyColumnPrefixes() {
+    document.querySelectorAll(".column-prefix-input").forEach((input) => {
+      state.columnPrefixes[input.dataset.colIdx] = input.value.trim();
+    });
+    persist();
+    recomputeSelectionsAndRender();
+    setStatus(
+      $("column-prefix-status"),
+      `Kürzel übernommen – ${distinctCourseTexts.length} unterschiedliche Kurswahl-Texte.`,
+      "ok"
+    );
   }
 
   /** Gruppiert Zeilen nach Forms-Namen; bei Mehrfach-Antworten derselben Person
@@ -589,7 +643,10 @@
         badgeHtml = ignored ? `<span class="confidence-badge low">ignoriert</span>` : confidenceBadge(1, "saved");
         source = ignored ? null : "saved";
       } else {
-        const suggestions = Matching.suggestCourseMatches(courseText, schildKurse, 1);
+        // Spalten-Kürzel (siehe Schritt 3a) für die Ähnlichkeitssuche ausklammern - es dient nur zur
+        // Unterscheidung gleichlautender Texte verschiedener Spalten, nicht zur Kursbezeichnung.
+        const searchText = FormsImport.stripKnownPrefix(courseText, state.columnPrefixes);
+        const suggestions = Matching.suggestCourseMatches(searchText, schildKurse, 1);
         if (suggestions.length && suggestions[0].score > 0.5) {
           inputValue = kursLabel(suggestions[0].item);
           score = suggestions[0].score;
@@ -661,7 +718,8 @@
       schildKurse,
       state.kursMatching,
       undefined,
-      kursLabel
+      kursLabel,
+      (text) => FormsImport.stripKnownPrefix(text, state.columnPrefixes)
     );
     persist();
     renderCourseMatchTable();
@@ -1006,6 +1064,7 @@
     $("btn-load-schild-data").addEventListener("click", onLoadSchildData);
     $("forms-file-input").addEventListener("change", onFormsFileSelected);
     $("btn-apply-mapping").addEventListener("click", onApplyMapping);
+    $("btn-apply-column-prefixes").addEventListener("click", onApplyColumnPrefixes);
     $("btn-automatch-students").addEventListener("click", onAutomatchStudents);
     $("btn-save-student-matches").addEventListener("click", onSaveStudentMatches);
     $("btn-check-missing-students").addEventListener("click", onCheckMissingStudents);
