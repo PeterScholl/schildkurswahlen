@@ -443,6 +443,15 @@ frisch geladenen Schild-Kursen aufgebaut wurde. Entfernt aus `state.kursMatching
 Einträge, deren `targetId` nicht mehr in `kursById` existiert, und meldet die Anzahl im Status-Text von
 Schritt 2. Ignorierte Einträge (keine `targetId`) bleiben unangetastet.
 
+`refreshKursBelegung()`: lädt nur `GET /kurse/abschnitt/{id}` neu (nicht den kompletten Schritt-2-Umfang)
+und ersetzt `schildKurse`/`kursById` durch den frischen Stand - inkl. der darin eingebetteten
+`schueler[]`-Arrays, aus denen die in Klammern angezeigten Teilnehmerzahlen (`kursLabelMitAnzahl()`)
+stammen. Ruft danach `pruneStaleKursMatches()`, `buildDatalists()`, `populateKurseOhneWahlFilters()` sowie
+beide `renderSplit*Table()` auf, damit alle Anzeigen synchron sind. Wird automatisch am Ende von Schritt 6
+(Übertragung, nur bei mindestens einem erfolgreichen Eintrag) sowie am Ende jedes Splits aufgerufen;
+zusätzlich manuell über den Button "Kursbelegung aktualisieren" am Anfang von Schritt 8
+(`onRefreshKursBelegung()`) anstoßbar - z.B. falls parallel direkt in Schild etwas geändert wurde.
+
 Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
 
 - `onApplyCourseSplit()`: übernimmt das Trennzeichen-Feld nach `state.courseSplitDelimiter` und
@@ -577,8 +586,7 @@ platziert, da sie deren Konfiguration liest):
   Schritt 8 (inkl. Löschmöglichkeit) - Schritt 6 selbst löscht aber weiterhin nichts automatisch.
 - Kein automatisierter Test-Runner; die Kernlogik (`formsImport.js`, `matching.js`) wurde während der
   Entwicklung über Node-Skripte gegen die echte Beispieldatei sowie synthetische Schild-Daten geprüft.
-- "Split in Jahrgangskurse" und "Split in Klassenkurse" arbeiten mit dem Datenstand aus dem letzten
-  "Schild-Daten laden" (Schritt 2); wer mehrere Split-Durchläufe hintereinander macht, sollte
-  zwischendurch neu laden, damit Schülerzahlen in den Datalist-Vorschlägen aktuell bleiben (die
-  eigentliche Verschiebe-Logik selbst holt pro Zeile frische Lernabschnittsdaten und ist dadurch auch ohne
-  Neuladen korrekt, nur die angezeigten Zahlen in Klammern könnten veraltet sein).
+- Die eigentliche Verschiebe-Logik von "Split in Jahrgangskurse"/"Split in Klassenkurse" holt pro Zeile
+  ohnehin frische Lernabschnittsdaten und ist dadurch immer korrekt, unabhängig vom Stand der angezeigten
+  Teilnehmerzahlen (siehe `refreshKursBelegung()` in der Programmstruktur unten für die automatische
+  Aktualisierung dieser Zahlen).

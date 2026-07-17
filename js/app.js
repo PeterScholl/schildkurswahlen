@@ -332,6 +332,37 @@
     datalist.innerHTML = schildKurse.map((k) => `<option value="${escapeHtml(kursLabelMitAnzahl(k))}"></option>`).join("");
   }
 
+  /**
+   * Lädt nur die Kursliste (inkl. aktueller Teilnehmerzahlen aus dem eingebetteten `schueler[]`) neu,
+   * ohne den kompletten "Schild-Daten laden"-Schritt (Schüler/Klassen/Kursarten/Jahrgänge) zu wiederholen
+   * - schneller und reicht aus, um die in Klammern angezeigten Teilnehmerzahlen sowie Split-Tabellen nach
+   * Übertragungen/Splits aktuell zu halten. Wird automatisch am Ende von Schritt 6 (Übertragung) und nach
+   * jedem Split aufgerufen; zusätzlich manuell über den "Kursbelegung aktualisieren"-Button in Schritt 8.
+   */
+  async function refreshKursBelegung() {
+    if (!abschnittId) return false;
+    try {
+      schildKurse = await SvwsApi.getKurse(abschnittId);
+      kursById = new Map(schildKurse.map((k) => [k.id, k]));
+      pruneStaleKursMatches();
+      buildDatalists();
+      populateKurseOhneWahlFilters();
+      renderSplitJahrgangTable();
+      renderSplitKlasseTable();
+      return true;
+    } catch (err) {
+      console.warn("Kursbelegung konnte nicht aktualisiert werden:", err);
+      return false;
+    }
+  }
+
+  async function onRefreshKursBelegung() {
+    const statusEl = $("kursbelegung-refresh-status");
+    setStatus(statusEl, "Aktualisiere Kursbelegung …", "");
+    const ok = await refreshKursBelegung();
+    setStatus(statusEl, ok ? "Kursbelegung aktualisiert." : "Aktualisierung fehlgeschlagen.", ok ? "ok" : "error");
+  }
+
   // ---------- 3. Forms-Datei laden ----------
 
   async function onFormsFileSelected(evt) {
@@ -1260,6 +1291,11 @@
       }
     }
     log.textContent += `\nFertig: ${ok} erfolgreich, ${failedRows.length} fehlgeschlagen.\n`;
+    if (ok > 0) {
+      log.textContent += `Aktualisiere Kursbelegung …\n`;
+      await refreshKursBelegung();
+      log.textContent += `Kursbelegung aktualisiert.\n`;
+    }
     log.scrollTop = log.scrollHeight;
     $("btn-execute-transfer").disabled = false;
   }
@@ -1666,9 +1702,16 @@
       log.scrollTop = log.scrollHeight;
     }
 
-    progressEl.classList.add("hidden");
     persist();
-    renderSplitJahrgangTable();
+    if (gesamtVerschoben > 0) {
+      log.textContent += `Aktualisiere Kursbelegung …\n`;
+      await refreshKursBelegung();
+      log.textContent += `Kursbelegung aktualisiert.\n`;
+      log.scrollTop = log.scrollHeight;
+    } else {
+      renderSplitJahrgangTable();
+    }
+    progressEl.classList.add("hidden");
     $("btn-split-jahrgang-execute").disabled = false;
     setStatus(
       statusEl,
@@ -1912,9 +1955,16 @@
       log.scrollTop = log.scrollHeight;
     }
 
-    progressEl.classList.add("hidden");
     persist();
-    renderSplitKlasseTable();
+    if (gesamtVerschoben > 0) {
+      log.textContent += `Aktualisiere Kursbelegung …\n`;
+      await refreshKursBelegung();
+      log.textContent += `Kursbelegung aktualisiert.\n`;
+      log.scrollTop = log.scrollHeight;
+    } else {
+      renderSplitKlasseTable();
+    }
+    progressEl.classList.add("hidden");
     $("btn-split-klasse-execute").disabled = false;
     setStatus(
       statusEl,
@@ -2203,6 +2253,8 @@
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);
     $("btn-reset-state").addEventListener("click", onResetState);
+
+    $("btn-refresh-kursbelegung").addEventListener("click", onRefreshKursBelegung);
 
     $("btn-run-check-leerer-kurs").addEventListener("click", onRunCheckLeererKurs);
     $("check-leerer-kurs-select-all").addEventListener("change", onCheckLeererKursSelectAll);
