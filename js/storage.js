@@ -21,6 +21,7 @@
       splitJahrgangRows: [], // [{quellkursId, jahrgangId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
       splitKlasseRows: [], // [{quellkursId, klasseId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
       kurseOhneWahlFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Kurse ohne Forms-Wahl"; leer = alle (Default)
+      leereKurseFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Leere Kurse suchen"; leer = alle (Default)
       schuelerMatching: {},
       kursMatching: {},
       leistungsdatenDefaults: {
@@ -58,6 +59,7 @@
       columnPrefixes: loaded.columnPrefixes || {},
       leistungsdatenDefaults: { ...defaults.leistungsdatenDefaults, ...(loaded.leistungsdatenDefaults || {}) },
       kurseOhneWahlFilter: { ...defaults.kurseOhneWahlFilter, ...(loaded.kurseOhneWahlFilter || {}) },
+      leereKurseFilter: { ...defaults.leereKurseFilter, ...(loaded.leereKurseFilter || {}) },
       schuelerMatching: loaded.schuelerMatching || {},
       kursMatching: loaded.kursMatching || {},
       statusFilter: loaded.statusFilter || [],

@@ -250,6 +250,7 @@
       buildDatalists();
       populateCreateKursDialogOptions();
       populateKurseOhneWahlFilters();
+      populateLeereKurseFilters();
       renderSplitJahrgangTable();
       renderSplitKlasseTable();
     } catch (err) {
@@ -347,6 +348,7 @@
       pruneStaleKursMatches();
       buildDatalists();
       populateKurseOhneWahlFilters();
+      populateLeereKurseFilters();
       renderSplitJahrgangTable();
       renderSplitKlasseTable();
       return true;
@@ -2269,6 +2271,229 @@
     await deleteKurseOhneWahlIds([Number(evt.target.dataset.id)]);
   }
 
+  // ---------- 8e. Leere Kurse suchen ----------
+  // Rein clientseitig auf dem bereits geladenen `schildKurse` (kein API-Aufruf nötig, da die
+  // Teilnehmerzahl schon im eingebetteten `schueler[]`-Array steckt) - eigener, unabhängig
+  // gespeicherter Fach-/Kursart-Filter (bewusst nicht mit "Kurse ohne Forms-Wahl" geteilt, damit eine
+  // Auswahländerung dort nicht unbemerkt auch dieses Ergebnis verändert).
+
+  let leereKurseResults = []; // [{kursId, kursLabel, fachLabel, kursart}]
+  let leereKurseSort = { key: "kurs", dir: "asc" };
+
+  function populateLeereKurseFilters() {
+    const gespeichertFach = state.leereKurseFilter.fachIds || [];
+    const gespeichertKursart = state.leereKurseFilter.kursarten || [];
+
+    const fachIdsInKursen = new Set(schildKurse.map((k) => k.idFach).filter((id) => id != null));
+    const relevantFaecher = schildFaecher
+      .filter((f) => fachIdsInKursen.has(f.id))
+      .sort((a, b) => a.kuerzel.localeCompare(b.kuerzel, "de"));
+    $("leere-kurse-fach-filter").innerHTML = relevantFaecher
+      .map((f) => {
+        const checked = gespeichertFach.length > 0 ? gespeichertFach.includes(f.id) : true;
+        return `<label><input type="checkbox" class="leere-kurse-fach-cb" value="${f.id}" ${checked ? "checked" : ""}/> ${escapeHtml(f.kuerzel)}</label>`;
+      })
+      .join("");
+
+    const kursarten = Array.from(new Set(schildKurse.map((k) => k.kursartAllg).filter(Boolean))).sort();
+    $("leere-kurse-kursart-filter").innerHTML = kursarten
+      .map((ka) => {
+        const checked = gespeichertKursart.length > 0 ? gespeichertKursart.includes(ka) : true;
+        return `<label><input type="checkbox" class="leere-kurse-kursart-cb" value="${escapeHtml(ka)}" ${checked ? "checked" : ""}/> ${escapeHtml(ka)}</label>`;
+      })
+      .join("");
+
+    document
+      .querySelectorAll(".leere-kurse-fach-cb, .leere-kurse-kursart-cb")
+      .forEach((cb) => cb.addEventListener("change", onLeereKurseFilterChange));
+    updateLeereKurseSelectAllCheckboxes();
+  }
+
+  function persistLeereKurseFilter() {
+    state.leereKurseFilter = {
+      fachIds: Array.from(document.querySelectorAll(".leere-kurse-fach-cb:checked")).map((cb) => Number(cb.value)),
+      kursarten: Array.from(document.querySelectorAll(".leere-kurse-kursart-cb:checked")).map((cb) => cb.value),
+    };
+    persist();
+  }
+
+  function updateLeereKurseSelectAllCheckboxes() {
+    const fachCbs = document.querySelectorAll(".leere-kurse-fach-cb");
+    $("leere-kurse-fach-select-all").checked = fachCbs.length > 0 && Array.from(fachCbs).every((cb) => cb.checked);
+    const kursartCbs = document.querySelectorAll(".leere-kurse-kursart-cb");
+    $("leere-kurse-kursart-select-all").checked =
+      kursartCbs.length > 0 && Array.from(kursartCbs).every((cb) => cb.checked);
+  }
+
+  function onLeereKurseFilterChange() {
+    persistLeereKurseFilter();
+    updateLeereKurseSelectAllCheckboxes();
+  }
+
+  function onLeereKurseFachSelectAll(evt) {
+    document.querySelectorAll(".leere-kurse-fach-cb").forEach((cb) => (cb.checked = evt.target.checked));
+    persistLeereKurseFilter();
+  }
+
+  function onLeereKurseKursartSelectAll(evt) {
+    document.querySelectorAll(".leere-kurse-kursart-cb").forEach((cb) => (cb.checked = evt.target.checked));
+    persistLeereKurseFilter();
+  }
+
+  function onRunLeereKurse() {
+    const statusEl = $("leere-kurse-status");
+    const erlaubteFachIds = new Set(
+      Array.from(document.querySelectorAll(".leere-kurse-fach-cb:checked")).map((cb) => Number(cb.value))
+    );
+    const erlaubteKursarten = new Set(
+      Array.from(document.querySelectorAll(".leere-kurse-kursart-cb:checked")).map((cb) => cb.value)
+    );
+    if (erlaubteFachIds.size === 0 || erlaubteKursarten.size === 0) {
+      setStatus(statusEl, "Bitte mindestens ein Fach und eine Kursart auswählen.", "error");
+      return;
+    }
+
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    leereKurseResults = schildKurse
+      .filter(
+        (k) => erlaubteFachIds.has(k.idFach) && erlaubteKursarten.has(k.kursartAllg) && (k.schueler || []).length === 0
+      )
+      .map((k) => {
+        const fach = fachById.get(k.idFach);
+        return {
+          kursId: k.id,
+          kursLabel: kursLabel(k),
+          fachLabel: fach ? `${fach.kuerzel} – ${fach.bezeichnung || ""}` : `Fach-ID ${k.idFach}`,
+          kursart: k.kursartAllg || "",
+        };
+      });
+
+    renderLeereKurseTable();
+    setStatus(statusEl, `${leereKurseResults.length} leere Kurse gefunden.`, leereKurseResults.length ? "warn" : "ok");
+  }
+
+  function compareLeereKurse(a, b, key) {
+    if (key === "id") return a.kursId - b.kursId;
+    if (key === "fach") return a.fachLabel.localeCompare(b.fachLabel, "de");
+    if (key === "kursart") return (a.kursart || "").localeCompare(b.kursart || "", "de");
+    return a.kursLabel.localeCompare(b.kursLabel, "de");
+  }
+
+  function updateLeereKurseSortIndicators() {
+    document.querySelectorAll("#leere-kurse-table .th-sort-btn").forEach((btn) => {
+      const active = btn.dataset.sortKey === leereKurseSort.key;
+      const arrow = active ? (leereKurseSort.dir === "asc" ? " ▲" : " ▼") : "";
+      btn.textContent = btn.dataset.label + arrow;
+      btn.classList.toggle("sort-active", active);
+    });
+  }
+
+  function onLeereKurseSortClick(evt) {
+    const btn = evt.target.closest(".th-sort-btn");
+    if (!btn) return;
+    const key = btn.dataset.sortKey;
+    if (leereKurseSort.key === key) leereKurseSort.dir = leereKurseSort.dir === "asc" ? "desc" : "asc";
+    else leereKurseSort = { key, dir: "asc" };
+    updateLeereKurseSortIndicators();
+    renderLeereKurseTable();
+  }
+
+  function renderLeereKurseTable() {
+    const tbody = document.querySelector("#leere-kurse-table tbody");
+    const suchtext = $("leere-kurse-suche").value.trim().toLowerCase();
+    let rows = leereKurseResults;
+    if (suchtext) {
+      rows = rows.filter((r) => [r.kursLabel, r.fachLabel, r.kursart].some((v) => v.toLowerCase().includes(suchtext)));
+    }
+    rows = [...rows].sort((a, b) => {
+      const cmp = compareLeereKurse(a, b, leereKurseSort.key);
+      return leereKurseSort.dir === "asc" ? cmp : -cmp;
+    });
+    tbody.innerHTML = rows
+      .map(
+        (r) => `
+      <tr>
+        <td><input type="checkbox" class="leere-kurse-row" data-id="${r.kursId}" checked /></td>
+        <td>${escapeHtml(r.kursLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.kursart)}</td>
+        <td>${r.kursId}</td>
+        <td><button type="button" class="btn-secondary leere-kurse-delete-single" data-id="${r.kursId}">Löschen</button></td>
+      </tr>`
+      )
+      .join("");
+    $("leere-kurse-select-all").checked = rows.length > 0;
+    $("btn-delete-leere-kurse").disabled = rows.length === 0;
+  }
+
+  function onLeereKurseSelectAll(evt) {
+    document.querySelectorAll(".leere-kurse-row").forEach((cb) => (cb.checked = evt.target.checked));
+  }
+
+  /** Löscht Kurse anhand ihrer IDs. Anders als bei den Leistungsdaten-Löschroutinen keine Bisection
+   *  nötig: der Endpunkt meldet pro Kurs einzeln `{id, success, log[]}` zurück. Nach mindestens einem
+   *  erfolgreichen Löschen wird die Kursbelegung aktualisiert (`refreshKursBelegung()`), damit gelöschte
+   *  Kurse überall (Datalists, Split-Tabellen, Matching) verschwinden. */
+  async function deleteLeereKurseIds(ids) {
+    const log = $("leere-kurse-log");
+    log.textContent = `Lösche ${ids.length} Kurs(e) …\n`;
+    $("btn-delete-leere-kurse").disabled = true;
+
+    let ok = 0;
+    let fehlgeschlagen = 0;
+    try {
+      const antworten = await SvwsApi.deleteKurseMultiple(ids);
+      for (const antwort of antworten) {
+        const row = leereKurseResults.find((r) => r.kursId === antwort.id);
+        const label = row ? row.kursLabel : `Kurs-ID ${antwort.id}`;
+        if (antwort.success) {
+          ok++;
+          log.textContent += `- ${label}: gelöscht.\n`;
+        } else {
+          fehlgeschlagen++;
+          log.textContent += `- ${label}: FEHLGESCHLAGEN${antwort.log && antwort.log.length ? " – " + antwort.log.join(" ") : ""}\n`;
+        }
+      }
+      const geloeschtIds = new Set(antworten.filter((a) => a.success).map((a) => a.id));
+      leereKurseResults = leereKurseResults.filter((r) => !geloeschtIds.has(r.kursId));
+      renderLeereKurseTable();
+      if (ok > 0) {
+        log.textContent += `Aktualisiere Kursbelegung …\n`;
+        await refreshKursBelegung();
+        log.textContent += `Kursbelegung aktualisiert.\n`;
+      }
+    } catch (err) {
+      fehlgeschlagen = ids.length;
+      log.textContent += `FEHLER – ${err.message}\n`;
+    }
+    log.scrollTop = log.scrollHeight;
+
+    setStatus(
+      $("leere-kurse-status"),
+      fehlgeschlagen === 0 ? `${ok} Kurs(e) gelöscht.` : `${ok} gelöscht, ${fehlgeschlagen} fehlgeschlagen.`,
+      fehlgeschlagen === 0 ? "ok" : "warn"
+    );
+    $("btn-delete-leere-kurse").disabled = leereKurseResults.length === 0;
+  }
+
+  async function onDeleteLeereKurseSelected() {
+    const checked = Array.from(document.querySelectorAll(".leere-kurse-row:checked"));
+    if (checked.length === 0) return;
+    const sicher = confirm(
+      `${checked.length} Kurs(e) wirklich unwiderruflich aus Schild löschen? Das betrifft den Kurs selbst (nicht nur Leistungsdaten) und kann nicht rückgängig gemacht werden.`
+    );
+    if (!sicher) return;
+    await deleteLeereKurseIds(checked.map((cb) => Number(cb.dataset.id)));
+  }
+
+  async function onDeleteLeereKurseSingle(evt) {
+    const sicher = confirm(
+      "Diesen Kurs wirklich unwiderruflich aus Schild löschen? Das betrifft den Kurs selbst (nicht nur Leistungsdaten) und kann nicht rückgängig gemacht werden."
+    );
+    if (!sicher) return;
+    await deleteLeereKurseIds([Number(evt.target.dataset.id)]);
+  }
+
   // ---------- Initialisierung ----------
 
   function init() {
@@ -2322,6 +2547,18 @@
     });
     document.querySelector("#kurse-ohne-wahl-table thead").addEventListener("click", onKurseOhneWahlSortClick);
     updateKurseOhneWahlSortIndicators();
+
+    $("leere-kurse-fach-select-all").addEventListener("change", onLeereKurseFachSelectAll);
+    $("leere-kurse-kursart-select-all").addEventListener("change", onLeereKurseKursartSelectAll);
+    $("btn-run-leere-kurse").addEventListener("click", onRunLeereKurse);
+    $("leere-kurse-select-all").addEventListener("change", onLeereKurseSelectAll);
+    $("btn-delete-leere-kurse").addEventListener("click", onDeleteLeereKurseSelected);
+    $("leere-kurse-suche").addEventListener("input", renderLeereKurseTable);
+    document.querySelector("#leere-kurse-table").addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("leere-kurse-delete-single")) onDeleteLeereKurseSingle(evt);
+    });
+    document.querySelector("#leere-kurse-table thead").addEventListener("click", onLeereKurseSortClick);
+    updateLeereKurseSortIndicators();
 
     $("btn-split-jahrgang-add-row").addEventListener("click", onSplitJahrgangAddRow);
     $("btn-split-jahrgang-execute").addEventListener("click", onExecuteSplitJahrgang);

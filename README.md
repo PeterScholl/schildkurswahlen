@@ -191,6 +191,21 @@ vorherige Schritt erledigt ist.
    - **Löschen einzeln** (Button je Zeile) oder **über Checkboxen mehrere auf einmal** (alle standardmäßig
      ausgewählt).
 
+   **"Leere Kurse suchen"**: letzter Nachbereitungs-Baustein, findet Kurse, denen laut zuletzt geladenem
+   Datenstand (Schritt 2 bzw. "Kursbelegung aktualisieren") **kein einziger Schüler** zugeordnet ist – z.B.
+   Kurse, die nach einem Split oder einer Bereinigung leer zurückgeblieben sind. Rein clientseitige Prüfung
+   über die bereits geladenen Kursdaten, kein zusätzlicher API-Aufruf nötig. Stilistisch an "Kurse ohne
+   Forms-Wahl" angelehnt (Fach-/Kursart-Checkboxen mit je einer "alle"-Checkbox, sortierbare Ergebnistabelle,
+   Suchfeld, Einzel- und Mehrfachlöschen), verwendet aber bewusst eine **eigene, unabhängig gespeicherte**
+   Filterauswahl (`state.leereKurseFilter` statt `state.kurseOhneWahlFilter`) – so verändert eine
+   Fach-/Kursart-Auswahl in einem der beiden Bereiche nicht unbemerkt das Ergebnis des anderen. Anders als
+   bei "Kurse ohne Forms-Wahl" (das nur Leistungsdaten-Einträge löscht) löscht dieser Bereich den **Kurs
+   selbst** über `DELETE /kurse/delete/multiple` – Schild meldet den Erfolg pro Kurs einzeln zurück (z.B.
+   falls ein Kurs trotz leerer Schülerliste aus anderen Gründen nicht löschbar ist), daher ist hier anders
+   als beim Leistungsdaten-Löschen keine Bisection nötig. Nach erfolgreichem Löschen wird automatisch die
+   Kursbelegung aktualisiert (`refreshKursBelegung()`), damit gelöschte Kurse überall (Datalists,
+   Split-Tabellen, Matching-Vorschläge) sofort verschwinden.
+
 ## Wichtige Entscheidungen
 
 - **Generischer Spalten-Picker statt Speziallogik**: Die Beispiel-Forms-Datei hat pro Wochentag mehrere
@@ -369,6 +384,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
 | `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch, Schritt 8) |
+| `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (Schritt 8, "Leere Kurse suchen") |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -587,6 +603,27 @@ platziert, da sie deren Konfiguration liest):
   (`onDeleteKurseOhneWahlSingle()`) als auch das Mehrfach-Löschen über Checkboxen
   (`onDeleteKurseOhneWahlSelected()`), beide mit `confirm()`-Sicherheitsabfrage.
 
+Funktionen rund um "Leere Kurse suchen" (Schritt 8, letzter Nachbereitungs-Baustein), strukturell an
+"Kurse ohne Forms-Wahl" angelehnt, aber mit **eigenem, unabhängig gespeichertem** Filter-Zustand
+(`state.leereKurseFilter`), damit die beiden Bereiche sich nicht gegenseitig in der Fach-/Kursart-Auswahl
+beeinflussen:
+
+- `populateLeereKurseFilters()` / `persistLeereKurseFilter()` / `updateLeereKurseSelectAllCheckboxes()` /
+  `onLeereKurseFachSelectAll()` / `onLeereKurseKursartSelectAll()`: analog zu den gleichnamigen
+  `*KurseOhneWahl*`-Funktionen, nur auf `state.leereKurseFilter` statt `state.kurseOhneWahlFilter`.
+- `onRunLeereKurse()`: rein clientseitige Prüfung ohne API-Aufruf - filtert `schildKurse` auf die
+  gewählten Fächer/Kursarten und meldet jeden Kurs, dessen eingebettetes `schueler`-Array leer ist.
+- `renderLeereKurseTable()` / `compareLeereKurse()` / `onLeereKurseSortClick()`: Suchfilter, Sortierung
+  und Rendering der Ergebnistabelle, gleiches Muster wie `renderKurseOhneWahlTable()`.
+- `deleteLeereKurseIds(ids)`: löscht - anders als `deleteKurseOhneWahlIds()`, das nur Leistungsdaten
+  entfernt - die **Kurse selbst** über `SvwsApi.deleteKurseMultiple()`. Der Endpunkt antwortet pro Kurs
+  einzeln mit `{id, success, log[]}` statt alles-oder-nichts, daher keine `batchWithBisection()` nötig -
+  jede Antwort wird direkt ausgewertet und im Log protokolliert. Nach mindestens einem erfolgreichen
+  Löschen wird automatisch `refreshKursBelegung()` aufgerufen. Gemeinsame Basis für
+  `onDeleteLeereKurseSingle()` (Einzel-Löschen je Zeile) und `onDeleteLeereKurseSelected()`
+  (Mehrfach-Löschen über Checkboxen), beide mit `confirm()`-Sicherheitsabfrage vor dem endgültigen,
+  nicht rückgängig machbaren Löschen des Kurses.
+
 ## Bekannte Grenzen / mögliche Erweiterungen
 
 - Mehrfach-Einreichungen derselben Person in der Forms-Datei werden anhand der Zeilenreihenfolge
@@ -601,3 +638,45 @@ platziert, da sie deren Konfiguration liest):
   ohnehin frische Lernabschnittsdaten und ist dadurch immer korrekt, unabhängig vom Stand der angezeigten
   Teilnehmerzahlen (siehe `refreshKursBelegung()` in der Programmstruktur unten für die automatische
   Aktualisierung dieser Zahlen).
+
+## Einen SVWS-API-Endpunkt selbst prüfen (Swagger UI, ohne curl)
+
+Wenn ein API-Aufruf unerwartet fehlschlägt oder unklar ist, welche Felder ein Endpunkt erwartet
+(Pflichtfelder, erlaubte Werte, Antwortformat), lässt sich das komplett im Browser nachvollziehen – ganz
+ohne Kommandozeile. Am Beispiel des öffentlichen Testservers `nightly.svws-nrw.de`:
+
+1. **Swagger UI öffnen**: `https://nightly.svws-nrw.de/swagger/` (ein SVWS-Server liefert seine
+   interaktive API-Dokumentation immer unter `/swagger/` aus, unabhängig vom Schema). Alternativ liefert
+   `https://nightly.svws-nrw.de/openapi/server.json` dieselben Informationen als reines
+   OpenAPI-JSON-Dokument – nützlich, um mit `Strg+F` gezielt nach einem Endpunkt- oder Feldnamen zu
+   suchen, wenn die Swagger-Oberfläche bei sehr vielen Endpunkten unübersichtlich wird.
+2. **Endpunkt suchen**: Swagger UI gruppiert die Endpunkte nach Tags (z.B. "Kurse", "Schüler",
+   "Leistungsdaten"). Über das Suchfeld oben rechts oder das Browser-`Strg+F` lässt sich z.B. `/kurse/create`
+   oder `/schueler/leistungsdaten/create/multiple` direkt finden.
+3. **Schema/Pflichtfelder einsehen**: Endpunkt aufklappen (Klick auf die Zeile) – unter "Request body"
+   zeigt Swagger UI das erwartete JSON-Schema. Wichtig ist der Reiter **"Schema"** statt "Example Value":
+   Pflichtfelder sind dort mit einem roten Stern bzw. dem Zusatz `required` markiert, optionale Felder
+   ohne. Genau so wurde z.B. entdeckt, dass `KursDaten` laut Schema zwar `schueler` und `weitereLehrer`
+   als Felder besitzt, der Server das Patchen dieser Felder beim Anlegen aber serverseitig ablehnt (siehe
+   "Fehlerbehebungen" oben) – das Schema beschreibt also die Datenstruktur, nicht zwingend, was jeder
+   einzelne Endpunkt tatsächlich akzeptiert.
+4. **Live gegen den Server testen ("Try it out")**: Button **"Try it out"** am Endpunkt klickt, die
+   Beispiel-Request-Body-Felder erscheinen editierbar. Für Endpunkte, die eine Anmeldung voraussetzen
+   (bei SVWS die meisten), oben auf der Seite auf das Schloss-Symbol bzw. den Button **"Authorize"**
+   klicken und Benutzername/Passwort für das gewünschte Schema eintragen (z.B. `admin` mit leerem
+   Passwort auf `nightly.svws-nrw.de`, Schema `GymAbiLite`) – Swagger UI merkt sich das für alle
+   weiteren "Try it out"-Aufrufe in der Sitzung. Danach Parameter/Body ausfüllen und **"Execute"**
+   klicken: Swagger UI zeigt sowohl den tatsächlich gesendeten Request (inkl. Headers, als `curl`-Befehl
+   zum Kopieren) als auch die rohe Server-Antwort inkl. HTTP-Status – bei einem Fehler also genau die
+   Meldung, die auch dieses Tool in seiner Fehlerausgabe anzeigt (siehe `buildErrorMessage()` in
+   `js/svwsApi.js`).
+5. **Ohne Swagger UI, nur im Browser**: `GET`-Endpunkte lassen sich auch direkt als URL aufrufen, z.B.
+   `https://nightly.svws-nrw.de/db/GymAbiLite/faecher` – der Browser fragt dann per HTTP-Basic-Auth-Dialog
+   nach Benutzername/Passwort und zeigt die JSON-Antwort an (ggf. lesbarer mit einer Browser-Erweiterung
+   wie einem JSON-Viewer). Für `POST`/`DELETE`-Endpunkte mit Body funktioniert das nicht mehr rein über die
+   Adresszeile – dafür ist "Try it out" in Swagger UI der einfachste Weg ohne Kommandozeile.
+6. **Selbstsigniertes Zertifikat**: Meldet der Browser beim Aufruf von `nightly.svws-nrw.de` oder der
+   eigenen Schild-Instanz eine Zertifikatswarnung, muss die Basis-URL (`https://<host>/db/<schema>` bzw.
+   `https://<host>/swagger/`) einmal manuell aufgerufen und die Warnung bestätigt werden – danach
+   funktionieren sowohl Swagger UI als auch dieses Tool (das denselben Browser-`fetch()` nutzt) ohne
+   weitere Nachfrage, siehe auch den entsprechenden Hinweistext direkt im Tool bei Verbindungsfehlern.

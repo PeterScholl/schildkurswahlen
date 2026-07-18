@@ -310,5 +310,7 @@ dialog#create-kurs-dialog .grid-form { grid-template-columns: 1fr; }
   margin-right: 0;
 }
 
-#kurse-ohne-wahl-suche { width: 100%; max-width: 24rem; margin: 0.5rem 0; }
-#kurse-ohne-wahl-table .btn-secondary { padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+#kurse-ohne-wahl-suche,
+#leere-kurse-suche { width: 100%; max-width: 24rem; margin: 0.5rem 0; }
+#kurse-ohne-wahl-table .btn-secondary,
+#leere-kurse-table .btn-secondary { padding: 0.15rem 0.5rem; font-size: 0.8rem; }

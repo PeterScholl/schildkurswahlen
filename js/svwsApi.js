@@ -158,6 +158,13 @@
     return request("DELETE", "/schueler/leistungsdaten/delete/multiple", ids);
   }
 
+  /** Löscht mehrere Kurse anhand ihrer IDs. Anders als bei Leistungsdaten antwortet dieser Endpunkt
+   *  pro Kurs einzeln mit `{id, success, log[]}` statt alles-oder-nichts - eine Bisection ist hier also
+   *  nicht nötig, die Erfolgs-/Fehlerauswertung passiert direkt anhand der Antwort. */
+  async function deleteKurseMultiple(ids) {
+    return request("DELETE", "/kurse/delete/multiple", ids);
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -177,5 +184,6 @@
     createLeistungsdatenMultiple,
     createLeistungsdaten,
     deleteLeistungsdatenMultiple,
+    deleteKurseMultiple,
   };
 })(window);

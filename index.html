@@ -416,6 +416,48 @@
   <button id="btn-delete-kurse-ohne-wahl" class="btn-danger" disabled>Ausgewählte löschen</button>
   <div id="kurse-ohne-wahl-log" class="log"></div>
 
+  <h3>Leere Kurse suchen</h3>
+  <p class="hint">
+    Findet Kurse, denen aktuell keine Schüler:innen zugeordnet sind – basierend auf dem zuletzt geladenen
+    Datenstand (Schritt 2 bzw. "Kursbelegung aktualisieren" oben), z.B. um Kurse aufzuspüren, die nach
+    einem Split oder einer Bereinigung leer zurückgeblieben sind. Wie bei "Kurse ohne Forms-Wahl" lässt
+    sich die Suche auf bestimmte Fächer und/oder Kursarten eingrenzen (eigene, unabhängig gespeicherte
+    Auswahl). Das Löschen betrifft den Kurs selbst, nicht nur einzelne Leistungsdaten – Schild prüft dabei
+    serverseitig, ob der Kurs überhaupt löschbar ist (z.B. keine anderen Abhängigkeiten), und meldet das
+    Ergebnis je Kurs einzeln zurück.
+  </p>
+  <div class="checkbox-row">
+    <label><input type="checkbox" id="leere-kurse-fach-select-all" checked /> <strong>Fach: alle</strong></label>
+  </div>
+  <div class="checkbox-row" id="leere-kurse-fach-filter"></div>
+  <div class="checkbox-row">
+    <label><input type="checkbox" id="leere-kurse-kursart-select-all" checked /> <strong>Kursart: alle</strong></label>
+  </div>
+  <div class="checkbox-row" id="leere-kurse-kursart-filter"></div>
+  <button id="btn-run-leere-kurse">Prüfen</button>
+  <span id="leere-kurse-status" class="status-msg"></span>
+
+  <div>
+    <input type="text" id="leere-kurse-suche" placeholder="Suchen (Kurs, Fach, Kursart) …" />
+  </div>
+  <div class="table-scroll">
+    <table id="leere-kurse-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="leere-kurse-select-all" /></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="kurs" data-label="Kurs">Kurs</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="fach" data-label="Fach">Fach</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="kursart" data-label="Kursart">Kursart</button></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="id" data-label="Kurs-ID">Kurs-ID</button></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button id="btn-delete-leere-kurse" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <div id="leere-kurse-log" class="log"></div>
+
   <datalist id="kurs-datalist-anzahl"></datalist>
 </section>
 
