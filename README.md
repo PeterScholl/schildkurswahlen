@@ -232,6 +232,15 @@ vorherige Schritt erledigt ist.
    Kursbelegung aktualisiert (`refreshKursBelegung()`), damit gelöschte Kurse überall (Datalists,
    Split-Tabellen, Matching-Vorschläge) sofort verschwinden.
 
+   **Hinweis (Stand Juli 2026):** `DELETE /kurse/delete/multiple` ist auf dem SVWS-Server serverseitig auf
+   den Server-Entwicklungsmodus beschränkt (`ServerMode.DEV` in `APIKurse.java`, während Anlegen/Ändern nur
+   `ServerMode.STABLE` verlangen) und schlägt im normalen Stable-Betrieb mit einem Fehler fehl – "Ausgewählte
+   löschen"/"Löschen" in diesem Bereich funktionieren also aktuell auf den meisten Servern nicht. Als
+   Workaround gibt es den Button **"Ausgewählte mit Sortierung 0 versehen"**: er patcht bei den per Checkbox
+   ausgewählten Kursen das Feld `sortierung` auf `0` (`PATCH /kurse/{id}`, läuft im normalen Server-Modus,
+   dieselbe Checkbox-Auswahl wie bei "Ausgewählte löschen"). In Schild3 selbst erscheinen diese Kurse dann bei der Sortierung
+   "Benutzerdefiniert" ganz oben und lassen sich dort markieren und per Rechtsklick-Kontextmenü löschen.
+
 ## Wichtige Entscheidungen
 
 - **Generischer Spalten-Picker statt Speziallogik**: Die Beispiel-Forms-Datei hat pro Wochentag mehrere
@@ -423,7 +432,8 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
 | `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch, Schritt 8) |
-| `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (Schritt 8, "Leere Kurse suchen") |
+| `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (Schritt 8, "Leere Kurse suchen") – Stand Juli 2026 serverseitig auf den Server-Entwicklungsmodus beschränkt, siehe Hinweis dort |
+| `patchKurs(id, patch)` | `PATCH /kurse/{id}` | Ändert einzelne Felder eines Kurses (Merge-Patch nach RFC 7386, z.B. `{sortierung: 0}`) – anders als das Löschen im normalen Server-Modus nutzbar |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -702,8 +712,16 @@ beeinflussen:
   `*KurseOhneWahl*`-Funktionen, nur auf `state.leereKurseFilter` statt `state.kurseOhneWahlFilter`.
 - `onRunLeereKurse()`: rein clientseitige Prüfung ohne API-Aufruf - filtert `schildKurse` auf die
   gewählten Fächer/Kursarten und meldet jeden Kurs, dessen eingebettetes `schueler`-Array leer ist.
+- `filteredLeereKurseRows()`: wendet nur das Suchfeld auf `leereKurseResults` an (ungesortiert) - von
+  `renderLeereKurseTable()` für die Anzeige genutzt.
 - `renderLeereKurseTable()` / `compareLeereKurse()` / `onLeereKurseSortClick()`: Suchfilter, Sortierung
   und Rendering der Ergebnistabelle, gleiches Muster wie `renderKurseOhneWahlTable()`.
+- `onLeereKurseSortierungNull()`: Workaround für das (Stand Juli 2026) serverseitig gesperrte
+  `DELETE /kurse/delete/multiple` (siehe Hinweis oben) - patcht per `SvwsApi.patchKurs(id, {sortierung: 0})`
+  konkurrenzbegrenzt (`mapWithConcurrency`) die per Checkbox ausgewählten Treffer (dieselbe
+  `.leere-kurse-row:checked`-Auswahl wie `onDeleteLeereKurseSelected()`), damit sie in Schild3 bei der
+  Sortierung "Benutzerdefiniert" ganz oben stehen und dort manuell markiert/gelöscht werden können.
+  Aktualisiert dabei auch das lokale `kursById`-Objekt, protokolliert Erfolg/Fehler pro Kurs.
 - `deleteLeereKurseIds(ids)`: löscht - anders als `deleteKurseOhneWahlIds()`, das nur Leistungsdaten
   entfernt - die **Kurse selbst** über `SvwsApi.deleteKurseMultiple()`. Der Endpunkt antwortet pro Kurs
   einzeln mit `{id, success, log[]}` statt alles-oder-nichts, daher keine `batchWithBisection()` nötig -

@@ -165,6 +165,13 @@
     return request("DELETE", "/kurse/delete/multiple", ids);
   }
 
+  /** Patcht einzelne Felder eines Kurses (Merge-Patch, RFC 7386 - nur die im `patch`-Objekt enthaltenen
+   *  Felder werden geändert). Anders als DELETE /kurse/delete/multiple läuft dieser Endpunkt im
+   *  ServerMode STABLE, ist also ohne besondere Server-Konfiguration nutzbar. */
+  async function patchKurs(id, patch) {
+    return request("PATCH", `/kurse/${id}`, patch);
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -185,5 +192,6 @@
     createLeistungsdaten,
     deleteLeistungsdatenMultiple,
     deleteKurseMultiple,
+    patchKurs,
   };
 })(window);

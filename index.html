@@ -505,6 +505,16 @@
     serverseitig, ob der Kurs überhaupt löschbar ist (z.B. keine anderen Abhängigkeiten), und meldet das
     Ergebnis je Kurs einzeln zurück.
   </p>
+  <p class="hint">
+    <strong>Hinweis (Stand Juli 2026):</strong> Das Löschen von Kursen über die SVWS-API ist serverseitig
+    noch nicht freigegeben (der Endpunkt ist auf den Server-Entwicklungsmodus beschränkt und antwortet im
+    Normalbetrieb mit einem Fehler) – "Ausgewählte löschen"/"Löschen" unten schlagen deshalb aktuell
+    typischerweise fehl. Leere Kurse lassen sich stattdessen direkt in der Schild3-Anwendung löschen: dort
+    mehrere Kurse markieren und über das Rechtsklick-Kontextmenü entfernen. Der Button
+    <strong>"Ausgewählte mit Sortierung 0 versehen"</strong> erleichtert das Auffinden: er setzt bei den
+    unten per Checkbox ausgewählten Kursen die Sortierung auf 0, sodass sie in Schild3 bei der Sortierung
+    "Benutzerdefiniert" ganz oben erscheinen und sich dort bequem gemeinsam markieren und löschen lassen.
+  </p>
   <div class="checkbox-row">
     <label><input type="checkbox" id="leere-kurse-fach-select-all" checked /> <strong>Fach: alle</strong></label>
   </div>
@@ -535,6 +545,7 @@
     </table>
   </div>
   <button id="btn-delete-leere-kurse" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <button type="button" class="btn-secondary" id="btn-leere-kurse-sortierung-null" disabled>Ausgewählte mit Sortierung 0 versehen</button>
   <div id="leere-kurse-log" class="log"></div>
 
   <datalist id="kurs-datalist-anzahl"></datalist>

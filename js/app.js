@@ -2904,13 +2904,18 @@
     renderLeereKurseTable();
   }
 
+  /** Wendet das Suchfeld auf leereKurseResults an (ungesortiert) - von renderLeereKurseTable() zur
+   *  Anzeige und von onLeereKurseSortierungNull() genutzt, damit "Alle mit Sortierung 0 versehen" nur die
+   *  aktuell (per Suche) sichtbaren Kurse betrifft, nicht zwangsläufig alle jemals gefundenen. */
+  function filteredLeereKurseRows() {
+    const suchtext = $("leere-kurse-suche").value.trim().toLowerCase();
+    if (!suchtext) return leereKurseResults;
+    return leereKurseResults.filter((r) => [r.kursLabel, r.fachLabel, r.kursart].some((v) => v.toLowerCase().includes(suchtext)));
+  }
+
   function renderLeereKurseTable() {
     const tbody = document.querySelector("#leere-kurse-table tbody");
-    const suchtext = $("leere-kurse-suche").value.trim().toLowerCase();
-    let rows = leereKurseResults;
-    if (suchtext) {
-      rows = rows.filter((r) => [r.kursLabel, r.fachLabel, r.kursart].some((v) => v.toLowerCase().includes(suchtext)));
-    }
+    let rows = filteredLeereKurseRows();
     rows = [...rows].sort((a, b) => {
       const cmp = compareLeereKurse(a, b, leereKurseSort.key);
       return leereKurseSort.dir === "asc" ? cmp : -cmp;
@@ -2930,6 +2935,51 @@
       .join("");
     $("leere-kurse-select-all").checked = rows.length > 0;
     $("btn-delete-leere-kurse").disabled = rows.length === 0;
+    $("btn-leere-kurse-sortierung-null").disabled = rows.length === 0;
+  }
+
+  /** "Ausgewählte mit Sortierung 0 versehen": Löschen von Kursen ist über die SVWS-API Stand Juli 2026
+   *  serverseitig gesperrt (siehe Hinweistext in Schritt 8) - als Workaround lassen sich leere Kurse
+   *  stattdessen direkt in Schild3 markieren und per Rechtsklick-Kontextmenü löschen. Damit sie dort in
+   *  der Sortierung "Benutzerdefiniert" ganz oben (und damit leicht auffindbar) erscheinen, setzt dieser
+   *  Button per PATCH (läuft im normalen Server-Modus, anders als DELETE) bei den per Checkbox
+   *  ausgewählten Kursen das Feld "sortierung" auf 0 - dieselbe Checkbox-Auswahl wie bei "Ausgewählte
+   *  löschen" (`.leere-kurse-row:checked`). */
+  async function onLeereKurseSortierungNull() {
+    const checked = Array.from(document.querySelectorAll(".leere-kurse-row:checked"));
+    if (checked.length === 0) return;
+    const rows = checked
+      .map((cb) => leereKurseResults.find((r) => r.kursId === Number(cb.dataset.id)))
+      .filter(Boolean);
+    const log = $("leere-kurse-log");
+    const statusEl = $("leere-kurse-status");
+    log.textContent = `Setze Sortierung auf 0 bei ${rows.length} Kurs(en) …\n`;
+    $("btn-leere-kurse-sortierung-null").disabled = true;
+
+    let ok = 0;
+    let fehlgeschlagen = 0;
+    await mapWithConcurrency(rows, 6, async (row) => {
+      try {
+        await SvwsApi.patchKurs(row.kursId, { sortierung: 0 });
+        const kurs = kursById.get(row.kursId);
+        if (kurs) kurs.sortierung = 0;
+        ok++;
+        log.textContent += `- ${row.kursLabel}: Sortierung auf 0 gesetzt.\n`;
+      } catch (err) {
+        fehlgeschlagen++;
+        log.textContent += `- ${row.kursLabel}: FEHLGESCHLAGEN – ${err.message}\n`;
+      }
+    });
+    log.scrollTop = log.scrollHeight;
+
+    $("btn-leere-kurse-sortierung-null").disabled = leereKurseResults.length === 0;
+    setStatus(
+      statusEl,
+      fehlgeschlagen === 0
+        ? `Sortierung bei ${ok} Kurs(en) auf 0 gesetzt – in Schild3 bei Sortierung "Benutzerdefiniert" markieren und per Rechtsklick löschen.`
+        : `${ok} Kurs(e) angepasst, ${fehlgeschlagen} fehlgeschlagen.`,
+      fehlgeschlagen === 0 ? "ok" : "warn"
+    );
   }
 
   function onLeereKurseSelectAll(evt) {
@@ -3059,6 +3109,7 @@
     $("btn-run-leere-kurse").addEventListener("click", onRunLeereKurse);
     $("leere-kurse-select-all").addEventListener("change", onLeereKurseSelectAll);
     $("btn-delete-leere-kurse").addEventListener("click", onDeleteLeereKurseSelected);
+    $("btn-leere-kurse-sortierung-null").addEventListener("click", onLeereKurseSortierungNull);
     $("leere-kurse-suche").addEventListener("input", renderLeereKurseTable);
     document.querySelector("#leere-kurse-table").addEventListener("click", (evt) => {
       if (evt.target.classList.contains("leere-kurse-delete-single")) onDeleteLeereKurseSingle(evt);
