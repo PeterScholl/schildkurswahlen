@@ -322,6 +322,44 @@
     aus dem Quellkurs entfernt. Über "+ Jahrgang" lässt sich zu einer Zeile schnell eine weitere Zeile mit
     demselben Quellkurs anlegen, um einen Kurs auf mehrere Jahrgänge/Zielkurse aufzuteilen.
   </p>
+
+  <h4>Automatischer Vorschlag</h4>
+  <p class="hint">
+    Kurs wählen und "Vorschlag erzeugen" klicken: ermittelt anhand der aktuell eingeschriebenen
+    Schüler:innen, welche Jahrgänge im Kurs vorkommen, und schlägt je Jahrgang einen Zielkurs vor
+    (Kürzel "&lt;Quellkurs&gt;-&lt;Jahrgang&gt;" – ein bereits vorhandener gleichnamiger Kurs wird
+    wiederverwendet, sonst bei "Übernehmen" neu angelegt). Bezeichnung/Fach/Kursart/Wochenstunden werden
+    vom Quellkurs übernommen, sind aber je Zeile änderbar (nur relevant, wenn für die Zeile tatsächlich
+    ein neuer Kurs angelegt wird). Das Zielkurs-Feld lässt sich frei anpassen: einen vorhandenen Kurs
+    wählen, den Namen ändern, oder mehreren Zeilen denselben Namen geben, um sie im selben (ggf. neu
+    angelegten) Kurs zusammenzuführen. Übernommene Zeilen landen unten in der Liste und werden erst durch
+    "Split durchführen" tatsächlich verschoben – danach lässt sich direkt der nächste Kurs splitten.
+  </p>
+  <label>Kurs
+    <input type="text" id="autosplit-quellkurs-input" list="kurs-datalist-anzahl" placeholder="Kurs wählen" />
+  </label>
+  <button type="button" class="btn-secondary" id="btn-autosplit-vorschlag">Vorschlag erzeugen</button>
+  <span id="autosplit-status" class="status-msg"></span>
+  <div class="table-scroll hidden" id="autosplit-table-wrap">
+    <table id="autosplit-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="autosplit-select-all" checked /></th>
+          <th>Jahrgang</th>
+          <th>Schüler</th>
+          <th>Zielkurs</th>
+          <th>Bezeichnung</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>WStd.</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" id="btn-autosplit-uebernehmen" class="hidden">Ausgewählte übernehmen</button>
+  <div id="autosplit-log" class="log"></div>
+
   <div class="table-scroll">
     <table id="split-jahrgang-table" class="split-table">
       <thead>

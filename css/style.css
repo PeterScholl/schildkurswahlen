@@ -224,6 +224,12 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); 
 .match-input.invalid { border-color: var(--error); }
 .match-input.auto { border-color: var(--ok); }
 
+#autosplit-table .autosplit-zielkurs-input,
+#autosplit-table .autosplit-bezeichnung-input { min-width: 180px; }
+#autosplit-table select.autosplit-fach { min-width: 140px; }
+#autosplit-table input.autosplit-kursart { min-width: 100px; }
+#autosplit-table input.autosplit-wstd { width: 4rem; min-width: 0; }
+
 .confidence-badge {
   display: inline-block;
   padding: 0.05rem 0.4rem;

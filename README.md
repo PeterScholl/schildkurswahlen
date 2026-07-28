@@ -161,6 +161,21 @@ vorherige Schritt erledigt ist.
      **Sicherheitsgarantie:** Schlägt das Anlegen im Zielkurs für eine Person fehl, wird ihr
      Quellkurs-Eintrag *nicht* gelöscht – so kann niemand eine Fachbelegung komplett verlieren, nur weil
      ein einzelner Schreibvorgang scheitert (isoliert getestet, siehe "Fehlerbehebungen" unten).
+   - **"Automatischer Vorschlag"** (oberhalb der Tabelle, optional): erspart bei einem Kurs mit vielen
+     Jahrgängen das manuelle Anlegen jeder einzelnen Zeile. Kurs wählen und **"Vorschlag erzeugen"**
+     klicken – das Tool ermittelt anhand der aktuell im Kurs eingeschriebenen Schüler:innen, welche
+     Jahrgänge vorkommen (mit Schülerzahl je Jahrgang), und schlägt je Jahrgang einen Zielkurs vor: Kürzel
+     `<Quellkurs>-<Jahrgang>`, wobei ein bereits vorhandener gleichnamiger Kurs wiederverwendet wird, sonst
+     bei "Übernehmen" neu angelegt. Bezeichnung/Fach/Kursart/Wochenstunden werden je Zeile vom Quellkurs
+     vorbelegt, sind aber frei änderbar (relevant nur, wenn für die Zeile tatsächlich ein neuer Kurs
+     angelegt wird). Über Checkboxen lässt sich auswählen, welche Zeilen übernommen werden sollen; das
+     Zielkurs-Feld akzeptiert wie gewohnt sowohl einen vorhandenen Kurs (Autocomplete) als auch einen frei
+     eingegebenen neuen Namen – geben zwei Zeilen denselben Namen ein, landen beide im selben, einmalig neu
+     angelegten Kurs (dessen Jahrgangs-Zuordnung dann die Vereinigung der beteiligten Jahrgänge ist). Klick
+     auf **"Ausgewählte übernehmen"** legt die dafür nötigen neuen Kurse an und hängt die ausgewählten
+     Zeilen unten an die "Split in Jahrgangskurse"-Tabelle an – verschoben wird dabei noch niemand, das
+     bleibt weiterhin Sache von "Split durchführen". Direkt danach lässt sich der nächste Kurs wählen und
+     vorschlagen.
 
    **"Split in Klassenkurse"**: direkt darunter, strukturell identisch zu "Split in Jahrgangskurse", aber
    nach Klasse statt Jahrgang gruppiert (eigene Tabelle mit "+ Klasse" statt "+ Jahrgang", eigenes
@@ -561,6 +576,38 @@ Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
   vorgesehene Menge wird aus den *erfolgreichen* Anlege-Operationen abgeleitet (`fehlgeschlageneOps`-Set
   über Objektreferenzen aus `createResult.failed`), damit ein fehlgeschlagenes Anlegen niemals zu einem
   gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
+
+Funktionen rund um "Automatischer Vorschlag" (Schritt 8, oberhalb von "Split in Jahrgangskurse" - füllt
+dessen Tabelle vor, verschiebt selbst aber nichts):
+
+- `autosplitProposalRows` / `autosplitQuellkursId`: Laufzeit-only-Zwischenergebnis des zuletzt erzeugten
+  Vorschlags, bewusst nicht in `state`/localStorage persistiert (wie `transferPreviewRows` oder
+  `checkLeererKursResults`) - ein Vorschlag lässt sich jederzeit neu erzeugen, es geht nichts Wichtiges
+  verloren, solange er nicht über "Übernehmen" in `state.splitJahrgangRows` überführt wurde.
+- `onAutosplitVorschlag()`: löst den gewählten Quellkurs auf, gruppiert dessen eingebettetes `schueler[]`
+  über `schuelerById.get(s.id).idJahrgang` nach Jahrgang (Zählung getrennt nach "nicht im Status-Filter
+  enthalten", analog zu `onExecuteSplitJahrgang()`), und baut pro vorkommendem Jahrgang eine
+  Vorschlagszeile - Zielkurs-Vorschlag `<Quellkurs-Kürzel>-<Jahrgang>`, dabei per `schildKurse.find()` nach
+  einem bereits vorhandenen gleichnamigen Kurs gesucht (dann als vorhandener Kurs vorbelegt statt als
+  Neuanlage-Vorschlag). Bezeichnung/Fach/Kursart/Wochenstunden werden vom Quellkurs übernommen.
+- `renderAutosplitTable()` / `fachOptionsHtml()`: rendern `autosplitProposalRows` in `#autosplit-table`
+  (Checkbox je Zeile, Zielkurs-Feld mit derselben `kurs-datalist-anzahl`-Autocomplete wie die Split-Tabelle
+  selbst, Kursart mit der bestehenden `kursart-datalist`). `fachOptionsHtml()` ist das Fach-Pendant zu
+  `jahrgangOptionsHtml()`, da ein `<select>` nicht wie eine Datalist mehrfach im DOM wiederverwendet werden
+  kann.
+- `onAutosplitUebernehmen()`: liest beim Klick auf "Ausgewählte übernehmen" die *aktuellen* DOM-Werte der
+  angehakten Zeilen (nicht `autosplitProposalRows` - der Benutzer kann Felder frei editiert haben, gleiches
+  Prinzip wie `commitVisibleStudentMatches()`). Zielkurs-Text mit auflösbarer `[id]`-Kennung → vorhandener
+  Kurs, sonst gilt der Text als Kürzel eines neu anzulegenden Kurses; mehrere Zeilen mit *identischem*
+  eingegebenem Zielkurs-Text werden dafür zu einer Gruppe zusammengefasst, sodass nur ein einziger neuer
+  Kurs für sie entsteht (mit der Vereinigung ihrer Jahrgänge als `idJahrgaenge`) - das ist der Mechanismus
+  hinter "zwei Zielkurse gleich wählen, um sie zusammenzuführen". Fehlt einer Gruppe die Kursart (Pflichtfeld,
+  wie im "Neuen Kurs anlegen"-Dialog) oder schlägt `SvwsApi.createKurs()` fehl, wird die Gruppe übersprungen
+  und im Protokoll (`#autosplit-log`) vermerkt, statt den ganzen Übernahme-Vorgang abzubrechen. Alle
+  erfolgreich aufgelösten Zeilen (vorhandener Kurs oder erfolgreich neu angelegte Gruppe) werden als
+  `{quellkursId, jahrgangId, zielkursId}` an `state.splitJahrgangRows` angehängt und die Autosplit-UI
+  danach zurückgesetzt (bereit für den nächsten Kurs) - der tatsächliche Verschiebevorgang bleibt wie immer
+  Sache von "Split durchführen".
 
 "Split in Klassenkurse" (`renderSplitKlasseTable()`, `onSplitKlasse*()`, `onExecuteSplitKlasse()`,
 `state.splitKlasseRows`) ist bewusst ein separater, struktureller Zwilling der obigen Funktionen statt

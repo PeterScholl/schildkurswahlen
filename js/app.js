@@ -23,6 +23,11 @@
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
   let createKursOnCreated = null; // Callback(neuerKurs), der nach erfolgreichem Anlegen im Dialog aufgerufen wird
 
+  // "Automatischer Vorschlag" für "Split in Jahrgangskurse" (Schritt 8) - Wegwerf-Zwischenergebnis wie
+  // transferPreviewRows/checkLeererKursResults, bewusst nicht in state/localStorage persistiert.
+  let autosplitProposalRows = []; // [{jahrgangId, jahrgangLabel, anzahlSchueler, zielkursValue, bezeichnung, fachId, kursart, wochenstunden}]
+  let autosplitQuellkursId = null;
+
   let missingStudents = []; // [{id, nachname, vorname, klasse}] – Schild-Schüler ohne Forms-Zuordnung
 
   let formsParsed = null; // { headers, rows }
@@ -1457,6 +1462,234 @@
     return optionen.join("");
   }
 
+  function fachOptionsHtml(selectedId) {
+    const optionen = ['<option value="">(kein Fach)</option>'].concat(
+      schildFaecher.map((f) => {
+        const label = `${f.kuerzel} – ${f.bezeichnung || ""}`;
+        return `<option value="${f.id}" ${f.id === selectedId ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      })
+    );
+    return optionen.join("");
+  }
+
+  /** "Vorschlag erzeugen": ermittelt für den gewählten Quellkurs, welche Jahrgänge unter den aktuell
+   *  eingeschriebenen Schüler:innen vorkommen, und baut daraus editierbare Vorschlagszeilen
+   *  (autosplitProposalRows) - hier wird noch nichts angelegt, das passiert erst bei "Übernehmen". */
+  function onAutosplitVorschlag() {
+    const statusEl = $("autosplit-status");
+    const id = idFromLabel($("autosplit-quellkurs-input").value.trim());
+    const quellkurs = id != null ? kursById.get(id) : null;
+    if (!quellkurs) {
+      setStatus(statusEl, "Bitte einen vorhandenen Kurs auswählen.", "error");
+      autosplitProposalRows = [];
+      autosplitQuellkursId = null;
+      renderAutosplitTable();
+      return;
+    }
+
+    // Getrennt zählen: wie in onExecuteSplitJahrgang() ist "in schuelerById nicht auflösbar" (Status-Filter
+    // aus Schritt 2) die einzige echte Einschränkung, kein Fehler des Kurses selbst.
+    const anzahlByJahrgang = new Map();
+    let nichtImStatusFilter = 0;
+    for (const s of quellkurs.schueler || []) {
+      const voll = schuelerById.get(s.id);
+      if (!voll) {
+        nichtImStatusFilter++;
+        continue;
+      }
+      if (voll.idJahrgang == null) continue;
+      anzahlByJahrgang.set(voll.idJahrgang, (anzahlByJahrgang.get(voll.idJahrgang) || 0) + 1);
+    }
+
+    autosplitQuellkursId = quellkurs.id;
+    autosplitProposalRows = schildJahrgaenge
+      .filter((j) => anzahlByJahrgang.has(j.id))
+      .map((j) => {
+        const jahrgangLabel = j.kuerzel || j.kuerzelStatistik || `#${j.id}`;
+        const kuerzelSuggestion = [quellkurs.kuerzel, jahrgangLabel].filter(Boolean).join("-");
+        const existing = schildKurse.find((k) => k.kuerzel === kuerzelSuggestion);
+        return {
+          jahrgangId: j.id,
+          jahrgangLabel,
+          anzahlSchueler: anzahlByJahrgang.get(j.id),
+          zielkursValue: existing ? kursLabelMitAnzahl(existing) : kuerzelSuggestion,
+          // Bewusst leer statt kuerzelSuggestion als Fallback: hat der Quellkurs keine eigene
+          // Zeugnisbezeichnung, würde sonst Kürzel und Bezeichnung im neuen Kurs identisch sein und
+          // z.B. in kursLabel()/kursLabelMitAnzahl() als "ELSA1-05 – ELSA1-05" doppelt angezeigt werden.
+          bezeichnung: quellkurs.bezeichnungZeugnis
+            ? [quellkurs.bezeichnungZeugnis, jahrgangLabel].filter(Boolean).join(" ")
+            : "",
+          fachId: quellkurs.idFach ?? null,
+          kursart: quellkurs.kursartAllg || "",
+          wochenstunden: quellkurs.wochenstunden ?? 2,
+        };
+      });
+
+    renderAutosplitTable();
+
+    if (autosplitProposalRows.length === 0) {
+      setStatus(
+        statusEl,
+        `Keine Jahrgänge gefunden${
+          nichtImStatusFilter ? ` (${nichtImStatusFilter} Schüler:innen im Kurs sind nicht im aktuell geladenen Status-Filter enthalten)` : ""
+        }.`,
+        "warn"
+      );
+      return;
+    }
+    const gesamtSchueler = autosplitProposalRows.reduce((sum, r) => sum + r.anzahlSchueler, 0);
+    setStatus(
+      statusEl,
+      `${autosplitProposalRows.length} Jahrgänge gefunden, ${gesamtSchueler} Schüler:innen betroffen` +
+        (nichtImStatusFilter ? ` (${nichtImStatusFilter} Schüler:innen im Kurs nicht im Status-Filter enthalten)` : "") +
+        ".",
+      "ok"
+    );
+  }
+
+  function renderAutosplitTable() {
+    $("autosplit-table-wrap").classList.toggle("hidden", autosplitProposalRows.length === 0);
+    $("btn-autosplit-uebernehmen").classList.toggle("hidden", autosplitProposalRows.length === 0);
+    const tbody = document.querySelector("#autosplit-table tbody");
+    tbody.innerHTML = autosplitProposalRows
+      .map(
+        (row, idx) => `
+      <tr data-row-idx="${idx}">
+        <td><input type="checkbox" class="autosplit-row-checkbox" checked /></td>
+        <td>${escapeHtml(row.jahrgangLabel)}</td>
+        <td>${row.anzahlSchueler}</td>
+        <td><input type="text" class="autosplit-zielkurs-input" list="kurs-datalist-anzahl" value="${escapeHtml(row.zielkursValue)}" /></td>
+        <td><input type="text" class="autosplit-bezeichnung-input" value="${escapeHtml(row.bezeichnung)}" /></td>
+        <td><select class="autosplit-fach">${fachOptionsHtml(row.fachId)}</select></td>
+        <td><input type="text" class="autosplit-kursart" list="kursart-datalist" value="${escapeHtml(row.kursart)}" /></td>
+        <td><input type="number" class="autosplit-wstd" value="${row.wochenstunden}" min="0" /></td>
+      </tr>`
+      )
+      .join("");
+  }
+
+  function onAutosplitSelectAll(evt) {
+    document.querySelectorAll(".autosplit-row-checkbox").forEach((cb) => (cb.checked = evt.target.checked));
+  }
+
+  /** "Ausgewählte übernehmen": liest die aktuell im DOM sichtbaren Werte der angehakten Vorschlagszeilen
+   *  (nicht aus autosplitProposalRows - der Benutzer kann Felder frei editiert haben). Zielkurs-Text löst
+   *  entweder auf einen vorhandenen Kurs auf (Datalist-Auswahl, `[id]`-Suffix) oder gilt als Kürzel eines
+   *  neu anzulegenden Kurses; mehrere Zeilen mit demselben eingegebenen Zielkurs-Text landen dadurch im
+   *  selben neuen Kurs (Jahrgänge werden dabei vereinigt). Erst danach werden die aufgelösten Zeilen an
+   *  state.splitJahrgangRows angehängt - der eigentliche Verschiebevorgang bleibt Sache von "Split
+   *  durchführen" weiter unten. */
+  async function onAutosplitUebernehmen() {
+    const statusEl = $("autosplit-status");
+    const log = $("autosplit-log");
+    log.textContent = "";
+
+    const rows = [];
+    document.querySelectorAll("#autosplit-table tbody tr").forEach((tr) => {
+      const idx = Number(tr.dataset.rowIdx);
+      const proposal = autosplitProposalRows[idx];
+      if (!proposal) return;
+      if (!tr.querySelector(".autosplit-row-checkbox").checked) return;
+      rows.push({
+        jahrgangId: proposal.jahrgangId,
+        jahrgangLabel: proposal.jahrgangLabel,
+        zielkursText: tr.querySelector(".autosplit-zielkurs-input").value.trim(),
+        bezeichnung: tr.querySelector(".autosplit-bezeichnung-input").value.trim(),
+        fachId: tr.querySelector(".autosplit-fach").value ? Number(tr.querySelector(".autosplit-fach").value) : null,
+        kursart: tr.querySelector(".autosplit-kursart").value.trim(),
+        wochenstunden: Number(tr.querySelector(".autosplit-wstd").value) || 0,
+      });
+    });
+
+    if (rows.length === 0) {
+      setStatus(statusEl, "Keine Zeilen ausgewählt.", "error");
+      return;
+    }
+
+    $("btn-autosplit-uebernehmen").disabled = true;
+
+    const finalEntries = [];
+    const neueGruppen = new Map(); // Zielkurs-Text -> {rows, bezeichnung, fachId, kursart, wochenstunden, jahrgangIds}
+    let uebersprungen = 0;
+
+    for (const row of rows) {
+      if (!row.zielkursText) {
+        log.textContent += `Jahrgang "${row.jahrgangLabel}": kein Zielkurs angegeben, übersprungen.\n`;
+        uebersprungen++;
+        continue;
+      }
+      const id = idFromLabel(row.zielkursText);
+      if (id != null && kursById.has(id)) {
+        finalEntries.push({ quellkursId: autosplitQuellkursId, jahrgangId: row.jahrgangId, zielkursId: id });
+        continue;
+      }
+      if (!neueGruppen.has(row.zielkursText)) {
+        neueGruppen.set(row.zielkursText, {
+          rows: [],
+          bezeichnung: row.bezeichnung,
+          fachId: row.fachId,
+          kursart: row.kursart,
+          wochenstunden: row.wochenstunden,
+          jahrgangIds: new Set(),
+        });
+      }
+      const gruppe = neueGruppen.get(row.zielkursText);
+      gruppe.rows.push(row);
+      gruppe.jahrgangIds.add(row.jahrgangId);
+    }
+
+    let neueKurseAnzahl = 0;
+    for (const [kuerzel, gruppe] of neueGruppen) {
+      if (!gruppe.kursart) {
+        log.textContent += `Kurs "${kuerzel}" konnte nicht angelegt werden: Kursart fehlt.\n`;
+        uebersprungen += gruppe.rows.length;
+        continue;
+      }
+      try {
+        const neuerKurs = await SvwsApi.createKurs({
+          idSchuljahresabschnitt: abschnittId,
+          kuerzel,
+          kursartAllg: gruppe.kursart,
+          idFach: gruppe.fachId,
+          bezeichnungZeugnis: gruppe.bezeichnung || null,
+          wochenstunden: gruppe.wochenstunden,
+          istSichtbar: true,
+          idJahrgaenge: Array.from(gruppe.jahrgangIds),
+          schienen: [],
+        });
+        schildKurse.push(neuerKurs);
+        kursById.set(neuerKurs.id, neuerKurs);
+        neueKurseAnzahl++;
+        for (const r of gruppe.rows) {
+          finalEntries.push({ quellkursId: autosplitQuellkursId, jahrgangId: r.jahrgangId, zielkursId: neuerKurs.id });
+        }
+        log.textContent += `Kurs "${neuerKurs.kuerzel}" angelegt (${gruppe.jahrgangIds.size} Jahrgang/Jahrgänge).\n`;
+      } catch (err) {
+        log.textContent += `Kurs "${kuerzel}" konnte nicht angelegt werden: ${err.message}\n`;
+        uebersprungen += gruppe.rows.length;
+      }
+    }
+
+    state.splitJahrgangRows.push(...finalEntries);
+    persist();
+    buildDatalists();
+    renderSplitJahrgangTable();
+
+    autosplitProposalRows = [];
+    autosplitQuellkursId = null;
+    $("autosplit-quellkurs-input").value = "";
+    renderAutosplitTable();
+
+    $("btn-autosplit-uebernehmen").disabled = false;
+    setStatus(
+      statusEl,
+      `${finalEntries.length} Zeile(n) übernommen (${neueKurseAnzahl} neue(r) Kurs(e) angelegt)` +
+        (uebersprungen ? `, ${uebersprungen} übersprungen (siehe Protokoll)` : "") +
+        ".",
+      uebersprungen ? "warn" : "ok"
+    );
+  }
+
   function renderSplitJahrgangTable() {
     const tbody = document.querySelector("#split-jahrgang-table tbody");
     tbody.innerHTML = state.splitJahrgangRows
@@ -2559,6 +2792,10 @@
     });
     document.querySelector("#leere-kurse-table thead").addEventListener("click", onLeereKurseSortClick);
     updateLeereKurseSortIndicators();
+
+    $("btn-autosplit-vorschlag").addEventListener("click", onAutosplitVorschlag);
+    $("autosplit-select-all").addEventListener("change", onAutosplitSelectAll);
+    $("btn-autosplit-uebernehmen").addEventListener("click", onAutosplitUebernehmen);
 
     $("btn-split-jahrgang-add-row").addEventListener("click", onSplitJahrgangAddRow);
     $("btn-split-jahrgang-execute").addEventListener("click", onExecuteSplitJahrgang);
