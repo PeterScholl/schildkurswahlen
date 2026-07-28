@@ -240,6 +240,9 @@
     </label>
     <label><input type="checkbox" id="default-auf-zeugnis" /> Auf Zeugnis</label>
     <label><input type="checkbox" id="default-epochal" /> Epochalunterricht</label>
+    <label>Nur ab Excel-Zeile <small>(optional, für Nachträge – Zeile 1 ist die Kopfzeile, Zeile 2 die erste Datenzeile)</small>
+      <input type="number" id="transfer-start-row" min="1" placeholder="alle Zeilen" />
+    </label>
   </div>
 
   <button id="btn-compute-preview">Vorschau berechnen</button>
@@ -389,6 +392,44 @@
     vorhandene Schüler:innen werden nicht doppelt angelegt, aber trotzdem aus dem Quellkurs entfernt. Über
     "+ Klasse" lässt sich zu einer Zeile schnell eine weitere Zeile mit demselben Quellkurs anlegen.
   </p>
+
+  <h4>Automatischer Vorschlag</h4>
+  <p class="hint">
+    Wie beim Vorschlag für "Split in Jahrgangskurse" oben, nur nach Klasse statt Jahrgang gruppiert: Kurs
+    wählen und "Vorschlag erzeugen" klicken – ermittelt anhand der aktuell eingeschriebenen Schüler:innen,
+    welche Klassen im Kurs vorkommen, und schlägt je Klasse einen Zielkurs vor (Kürzel
+    "&lt;Quellkurs&gt;-&lt;Klasse&gt;" – ein bereits vorhandener gleichnamiger Kurs wird wiederverwendet,
+    sonst bei "Übernehmen" neu angelegt). Bezeichnung/Fach/Kursart/Wochenstunden werden vom Quellkurs
+    übernommen, sind aber je Zeile änderbar. Das Zielkurs-Feld lässt sich frei anpassen: einen vorhandenen
+    Kurs wählen, den Namen ändern, oder mehreren Zeilen denselben Namen geben, um sie im selben (ggf. neu
+    angelegten) Kurs zusammenzuführen. Übernommene Zeilen landen unten in der Liste und werden erst durch
+    "Split durchführen" tatsächlich verschoben.
+  </p>
+  <label>Kurs
+    <input type="text" id="autosplit-klasse-quellkurs-input" list="kurs-datalist-anzahl" placeholder="Kurs wählen" />
+  </label>
+  <button type="button" class="btn-secondary" id="btn-autosplit-klasse-vorschlag">Vorschlag erzeugen</button>
+  <span id="autosplit-klasse-status" class="status-msg"></span>
+  <div class="table-scroll hidden" id="autosplit-klasse-table-wrap">
+    <table id="autosplit-klasse-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="autosplit-klasse-select-all" checked /></th>
+          <th>Klasse</th>
+          <th>Schüler</th>
+          <th>Zielkurs</th>
+          <th>Bezeichnung</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>WStd.</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" id="btn-autosplit-klasse-uebernehmen" class="hidden">Ausgewählte übernehmen</button>
+  <div id="autosplit-klasse-log" class="log"></div>
+
   <div class="table-scroll">
     <table id="split-klasse-table" class="split-table">
       <thead>

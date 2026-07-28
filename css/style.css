@@ -230,6 +230,12 @@ tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); 
 #autosplit-table input.autosplit-kursart { min-width: 100px; }
 #autosplit-table input.autosplit-wstd { width: 4rem; min-width: 0; }
 
+#autosplit-klasse-table .autosplit-klasse-zielkurs-input,
+#autosplit-klasse-table .autosplit-klasse-bezeichnung-input { min-width: 180px; }
+#autosplit-klasse-table select.autosplit-klasse-fach { min-width: 140px; }
+#autosplit-klasse-table input.autosplit-klasse-kursart { min-width: 100px; }
+#autosplit-klasse-table input.autosplit-klasse-wstd { width: 4rem; min-width: 0; }
+
 .confidence-badge {
   display: inline-block;
   padding: 0.05rem 0.4rem;

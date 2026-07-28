@@ -24,6 +24,7 @@
       leereKurseFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Leere Kurse suchen"; leer = alle (Default)
       schuelerMatching: {},
       kursMatching: {},
+      transferStartRow: null, // Excel-Zeilennummer (1-basiert, Kopfzeile = Zeile 1); null/leer = alle Zeilen übertragen
       leistungsdatenDefaults: {
         kursartFallback: "",
         aufZeugnis: false,

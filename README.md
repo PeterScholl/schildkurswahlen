@@ -112,8 +112,14 @@ vorherige Schritt erledigt ist.
    prüft das Tool für jede gematchte Schüler×Kurs-Kombination gegen die tatsächlichen Lernabschnittsdaten,
    ob der Eintrag in Schild schon existiert. Nur die tatsächlich fehlenden Kombinationen werden zur
    Übertragung vorausgewählt; vorhandene werden nur informativ angezeigt (ausgegraut, abwählbar/nicht
-   nötig). Über "Übertragen starten" werden die fehlenden Leistungsdaten-Einträge in Batches angelegt,
-   mit Protokoll pro Batch.
+   nötig) – dabei gilt ein Eintrag auch dann als vorhanden, wenn er inzwischen (Schritt 8) in einen
+   Split-Zielkurs verschoben wurde (Hinweis "bereits vorhanden (in Split-Zielkurs)"), damit eine erneute
+   Übertragung so einer Person nicht versehentlich wieder einen Eintrag im alten, gesplitteten Quellkurs
+   anlegt. Über "Übertragen starten" werden die fehlenden Leistungsdaten-Einträge in Batches angelegt, mit
+   Protokoll pro Batch. Das Feld **"Nur ab Excel-Zeile"** (optional) grenzt "Vorschau berechnen" auf Forms-
+   Zeilen ab der angegebenen Excel-Zeilennummer ein (Zeile 1 = Kopfzeile, Zeile 2 = erste Datenzeile) – z.B.
+   praktisch, um bei einem späten Nachtrag gezielt nur die neu hinzugekommenen Zeilen zu betrachten, ohne
+   die komplette (große) Kombinationsmenge erneut zu prüfen. Leer lassen überträgt wie bisher alle Zeilen.
 7. **Speichern/Laden**: Der gesamte Zustand (Verbindungsdaten *ohne Passwort*, Statusfilter,
    Spaltenzuordnung, beide Matching-Tabellen, Übertragungs-Defaults) wird automatisch im Browser
    (`localStorage`) gesichert und beim nächsten Öffnen der Seite wiederhergestellt. Zusätzlich kann der
@@ -181,7 +187,12 @@ vorherige Schritt erledigt ist.
    nach Klasse statt Jahrgang gruppiert (eigene Tabelle mit "+ Klasse" statt "+ Jahrgang", eigenes
    `state.splitKlasseRows`). Ein Unterschied: Kurse kennen in Schild keine direkte Klassen-Zuordnung
    (nur `idJahrgaenge`), daher wird beim Anlegen eines Zielkurses über "+ Kurs" als Jahrgangs-Vorschlag
-   der Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer.
+   der Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer. Auch
+   hier gibt es oberhalb der Tabelle denselben **"Automatischer Vorschlag"**-Bereich wie bei "Split in
+   Jahrgangskurse" (Kurs wählen, "Vorschlag erzeugen", Zeilen prüfen/anpassen/auswählen, "Ausgewählte
+   übernehmen"), nur nach Klasse statt Jahrgang gruppiert. Werden beim Neuanlegen mehrere Zeilen zu einem
+   gemeinsamen (neuen) Zielkurs zusammengeführt, ist dessen Jahrgangs-Zuordnung die Vereinigung der
+   `idJahrgang`-Werte aller beteiligten Klassen.
 
    **"Kurse ohne Forms-Wahl"** (bewusst *nach* den beiden Split-Bereichen platziert, siehe unten): vergleicht
    für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen Schild-Kurse mit ihren gematchten
@@ -364,6 +375,19 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    Die Ergebnistabelle in Schritt 8 zeigt zusätzlich eine Kurs-ID-Spalte, damit der Unterschied zwischen
    "leer" und "verweist auf gelöschten Kurs" sichtbar ist.
 
+7. **Erneute Übertragung (Schritt 6) legte Personen, die zuvor per Split (Schritt 8) in einen
+   Jahrgangs-/Klassenkurs verschoben worden waren, wieder im alten, gesplitteten Quellkurs an.**
+   Ursache: "Vorschau berechnen" prüfte die Existenz eines Leistungsdaten-Eintrags nur gegen genau den in
+   Schritt 5 gematchten Kurs. Nach einem Split hat die betroffene Person dort aber gar keinen Eintrag mehr
+   (der Split hat ihn ins Zielkurs verschoben) – die Vorschau erkannte das fälschlich als "fehlt" und legte
+   bei "Übertragen starten" einen zweiten, veralteten Eintrag im Quellkurs an. Betraf typischerweise
+   Nachträge: neue Forms-Antworten, deren Kurswahl auf einen inzwischen gesplitteten Kurs gematcht war.
+   **Fix:** `onComputePreview()` (`js/app.js`) prüft jetzt zusätzlich, ob einer der *vorhandenen*
+   Leistungsdaten-Einträge einer Person über `resolveUrsprungsKurs()` (dieselbe Rückwärts-Verfolgung durch
+   ggf. mehrere Split-Schritte, die schon "Kurse ohne Forms-Wahl" nutzt) auf den gematchten Kurs
+   zurückführt - dann gilt die Kombination ebenfalls als "bereits vorhanden" (Hinweis "bereits vorhanden
+   (in Split-Zielkurs)" in der Vorschau-Tabelle) statt erneut angelegt zu werden.
+
 ## Programmstruktur
 
 ```text
@@ -525,7 +549,15 @@ Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen währe
   Anzahl neu übernommener Zeilen zurück. Werden vom "Speichern"-Button in Schritt 4 (nur Schüler) bzw.
   intern von `commitVisibleMatches()` (beide zusammen, vor der Vorschau-Berechnung in Schritt 6)
   aufgerufen.
-- `collectMatchedPairs()`: sammelt alle gematchten Schüler×Kurs-Kombinationen und dedupliziert sie.
+- `collectMatchedPairs()`: sammelt alle gematchten Schüler×Kurs-Kombinationen und dedupliziert sie. Ist
+  `state.transferStartRow` gesetzt (Feld "Nur ab Excel-Zeile"), werden Forms-Zeilen mit kleinerem
+  `entry.rowIndex` vorher übersprungen (`transferStartRowIndex()` rechnet die 1-basierte Excel-Zeilennummer
+  in den 0-basierten `rowIndex` aus `FormsImport.extractSelections()` um) - betrifft nur die Übertragung,
+  nicht die Matching-Tabellen in Schritt 4/5.
+- `onComputePreview()`: baut `transferPreviewRows` und prüft dabei je Person nicht nur, ob im gematchten
+  Kurs direkt schon ein Leistungsdaten-Eintrag existiert, sondern über `resolveUrsprungsKurs()` (siehe
+  Schritt 8 unten) auch, ob ein vorhandener Eintrag über einen zwischenzeitlichen Split auf diesen Kurs
+  zurückführt (`existingViaSplit`) - siehe "Fehlerbehebungen" Nr. 7 oben.
 - `createBatchWithBisection(rows)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis die
   einzelnen fehlerhaften Datensätze isoliert sind, statt einen ganzen Batch zu verwerfen.
 
@@ -559,7 +591,9 @@ Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
 - `renderSplitJahrgangTable()` / `onSplitJahrgangAddRow()` / `onSplitJahrgangAddBelow()` /
   `onSplitJahrgangRemoveRow()`: verwalten `state.splitJahrgangRows` (persistiert) und deren Darstellung.
   Delegierte Change-/Click-Handler am statischen `#split-jahrgang-table`-Element bedienen alle Zeilen,
-  ohne nach jedem Re-Render neu verdrahtet werden zu müssen.
+  ohne nach jedem Re-Render neu verdrahtet werden zu müssen. Ist in einer Zeile bereits ein Quellkurs
+  gewählt, zeigt `jahrgangOptionsHtml()` hinter jedem Jahrgang zusätzlich die Schülerzahl dieses
+  Quellkurses in diesem Jahrgang an (z.B. "05 (12 SuS)"), ermittelt über `jahrgangAnzahlByKurs(quellkurs)`.
 - `onSplitJahrgangZielkursChange()`: löst das Zielkurs-Feld strikt auf einen vorhandenen Kurs auf (wie
   `onSplitJahrgangQuellkursChange()`) - kein Freitext-Fallback.
 - `onSplitJahrgangCreateZielkurs()`: öffnet den (generalisierten, siehe unten) "Neuen Kurs
@@ -615,7 +649,15 @@ einer gemeinsamen generischen Engine - die beiden Dimensionen unterscheiden sich
 `idKlasse` vs. `idJahrgang`; Kurse kennen nur Jahrgänge, keine Klassen, daher andere
 Zielkurs-Anlage-Vorbelegung über `klasse.idJahrgang`), dass eine Abstraktion mehr Indirektion als Nutzen
 gebracht hätte. Echte Querschnittslogik (`batchWithBisection()`, `buildSplitLeistungsdatenPayload()`,
-`openCreateKursDialog()`) bleibt geteilt.
+`openCreateKursDialog()`, `fachOptionsHtml()`) bleibt geteilt.
+
+Analog dazu ist auch "Automatischer Vorschlag" für Klassen (`autosplitKlasseProposalRows`,
+`onAutosplitKlasseVorschlag()`, `renderAutosplitKlasseTable()`, `onAutosplitKlasseSelectAll()`,
+`onAutosplitKlasseUebernehmen()`) ein struktureller Zwilling der gleichnamigen Jahrgangs-Funktionen weiter
+oben - `klasseAnzahlByKurs()` ist dabei das Pendant zu `jahrgangAnzahlByKurs()`. Fachlicher Unterschied
+beim Neuanlegen von Zielkursen: `idJahrgaenge` des neuen Kurses wird aus `klasse.idJahrgang` der
+beteiligten Zeile(n) gebildet (vereinigt bei zusammengeführten Zeilen), nicht aus einem direkt gewählten
+Jahrgang - wie schon bei `onSplitKlasseCreateZielkurs()`.
 
 Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8, bewusst *nach* den beiden Split-Blöcken im Code
 platziert, da sie deren Konfiguration liest):
