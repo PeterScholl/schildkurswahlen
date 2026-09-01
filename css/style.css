@@ -36,6 +36,18 @@ body {
 
 header, main, footer { max-width: 1100px; margin: 0 auto; padding: 1rem 1.5rem; }
 
+.page-nav {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0.6rem 1.5rem 0;
+}
+.page-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.page-nav a:hover { text-decoration: underline; }
+
 header h1 { margin-bottom: 0.2rem; }
 .subtitle, .hint { color: var(--muted); font-size: 0.92rem; }
 
@@ -326,3 +338,44 @@ dialog#create-kurs-dialog .grid-form { grid-template-columns: 1fr; }
 #leere-kurse-suche { width: 100%; max-width: 24rem; margin: 0.5rem 0; }
 #kurse-ohne-wahl-table .btn-secondary,
 #leere-kurse-table .btn-secondary { padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+
+/* Spaltenkopf-Filter (Excel-artig): kleine ▾-Schaltfläche im th, öffnet ein Popover mit Checkboxen für
+   die in der Ergebnisliste tatsächlich vorkommenden Werte dieser Spalte (z.B. "Leere Kurse suchen" auf
+   wartung.html, Spalten Fach/Kursart). */
+.col-filter-wrap { position: relative; display: inline-block; margin-left: 0.3rem; }
+.col-filter-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 0 0.15rem;
+  margin: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+.col-filter-btn:hover { color: var(--accent); }
+.col-filter-btn.active { color: var(--accent); font-weight: 700; }
+.col-filter-popover {
+  position: absolute;
+  top: 1.3rem;
+  left: 0;
+  z-index: 10;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 0.5rem 0.65rem;
+  min-width: 12rem;
+  max-height: 16rem;
+  overflow: auto;
+  font-weight: normal;
+  text-transform: none;
+}
+.col-filter-options { display: flex; flex-direction: column; gap: 0.3rem; }
+.col-filter-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

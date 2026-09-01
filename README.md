@@ -11,6 +11,14 @@ leicht von den Schild-Datensätzen ab ("Peter Scholl" vs. "Scholl, Peter", "Scha
 korrigieren, merkt sich diese Korrekturen dauerhaft und legt am Ende die passenden Leistungsdaten-Einträge
 in Schild an.
 
+Das Projekt besteht aus zwei Seiten, die sich oben gegenseitig verlinken und sich denselben
+Browser-Speicher (Verbindungsdaten außer Passwort, Splits, Filter) teilen:
+
+- **`index.html`** – der oben beschriebene Forms-Kurswahlen-Abgleich (Wizard, Schritt für Schritt).
+- **`wartung.html`** – eigenständige Werkzeuge zum Aufräumen der Schild-Kursdaten (Splitten, leere Kurse
+  aufspüren, verwaiste Leistungsdaten finden), ohne dass dafür Importdaten geladen werden müssen. Siehe
+  [Wartung (`wartung.html`)](#wartung-wartunghtml) weiter unten.
+
 ## Bedienung (Wizard, Schritt für Schritt)
 
 Die Seite `index.html` einfach im Browser öffnen (Doppelklick reicht, ein lokaler Webserver ist nicht
@@ -112,8 +120,9 @@ vorherige Schritt erledigt ist.
    prüft das Tool für jede gematchte Schüler×Kurs-Kombination gegen die tatsächlichen Lernabschnittsdaten,
    ob der Eintrag in Schild schon existiert. Nur die tatsächlich fehlenden Kombinationen werden zur
    Übertragung vorausgewählt; vorhandene werden nur informativ angezeigt (ausgegraut, abwählbar/nicht
-   nötig) – dabei gilt ein Eintrag auch dann als vorhanden, wenn er inzwischen (Schritt 8) in einen
-   Split-Zielkurs verschoben wurde (Hinweis "bereits vorhanden (in Split-Zielkurs)"), damit eine erneute
+   nötig) – dabei gilt ein Eintrag auch dann als vorhanden, wenn er inzwischen (per Split auf der
+   [Wartungsseite](#wartung-wartunghtml)) in einen Split-Zielkurs verschoben wurde (Hinweis "bereits
+   vorhanden (in Split-Zielkurs)"), damit eine erneute
    Übertragung so einer Person nicht versehentlich wieder einen Eintrag im alten, gesplitteten Quellkurs
    anlegt. Über "Übertragen starten" werden die fehlenden Leistungsdaten-Einträge in Batches angelegt, mit
    Protokoll pro Batch. Das Feld **"Nur ab Excel-Zeile"** (optional) grenzt "Vorschau berechnen" auf Forms-
@@ -121,125 +130,158 @@ vorherige Schritt erledigt ist.
    praktisch, um bei einem späten Nachtrag gezielt nur die neu hinzugekommenen Zeilen zu betrachten, ohne
    die komplette (große) Kombinationsmenge erneut zu prüfen. Leer lassen überträgt wie bisher alle Zeilen.
 7. **Speichern/Laden**: Der gesamte Zustand (Verbindungsdaten *ohne Passwort*, Statusfilter,
-   Spaltenzuordnung, beide Matching-Tabellen, Übertragungs-Defaults) wird automatisch im Browser
-   (`localStorage`) gesichert und beim nächsten Öffnen der Seite wiederhergestellt. Zusätzlich kann der
-   Zustand als JSON-Datei exportiert/importiert werden, z.B. um ihn an eine Kolleg:in weiterzugeben oder
-   zu sichern. Über "Zustand zurücksetzen" (mit Sicherheitsabfrage) lässt sich der komplette gespeicherte
-   Zustand löschen und ganz von vorne beginnen – z.B. nach einem Testlauf mit falschen Daten oder zu Beginn
-   einer neuen Umfragerunde im nächsten Halbjahr.
-8. **Nachbereitung** (sichtbar sobald Schritt 2 abgeschlossen ist, unabhängig vom restlichen
-   Forms-Abgleich): Sammelstelle für Kontrollen auf dem aktuellen Schild-Datenbestand, z.B. um
-   Datenreste aus früheren, fehlgeschlagenen Übertragungen aufzuspüren. Aktuell verfügbar:
-   **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
-   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht
-   mehr existierenden Kurs zeigt – letzteres z.B. bei doppelt angelegten Einträgen für dasselbe Fach, bei
-   denen einer der beiden Kurse zwischenzeitlich in Schild gelöscht wurde (reiner Klassenunterricht ohne
-   Kursart wird nicht gemeldet). Über "Prüfen" werden alle in Schritt 2 geladenen Schüler:innen
-   durchsucht (bei größeren Schulen können das über 1000 sein – Fortschrittsbalken und Statustext zeigen
-   laufend an, wie viele bereits geprüft wurden und wie viele Treffer es bisher gibt); Treffer erscheinen
-   in einer Tabelle mit Auswahl-Checkboxen (alle vorausgewählt, inkl.
-   Anzeige der betroffenen Kurs-ID), über "Ausgewählte löschen" (mit Sicherheitsabfrage) lassen sich die
-   markierten Leistungsdaten-Einträge dauerhaft aus Schild entfernen. Weitere Kontrollen lassen sich über
-   `js/check.js` ergänzen.
-
-   **"Split in Jahrgangskurse"**: verschiebt Schüler:innen eines Jahrgangs aus einem gemeinsam angelegten
-   Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
-   jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
-   Zielkurs) definiert die gewünschten Verschiebungen:
-   - **Quellkurs**/**Zielkurs**: Autocomplete-Felder wie in Schritt 4/5, akzeptieren bewusst nur
-     *vorhandene* Kurse (zeigen zusätzlich die aktuelle Schülerzahl je Kurs in Klammern an, z.B.
-     "AGGT-Robotik (23)") – kein "Freitext legt automatisch einen Kurs an" wie in einer früheren Version,
-     das war zu intransparent.
-   - **Zielkurs, der noch nicht existiert**: über den Button **"+ Kurs"** neben dem Zielkurs-Feld öffnet
-     sich derselbe "Neuen Kurs anlegen"-Dialog wie in Schritt 5, vorbelegt mit Vorschlägen aus dem
-     Quellkurs (Kürzel-Vorschlag `<Quellkurs-Kürzel>-<Jahrgang>`, Fach, Kursart, Wochenstunden) und dem
-     Jahrgang dieser Zeile als vorausgewähltem (aber änderbarem) Jahrgang – alle Werte bleiben im Dialog
-     frei editierbar, nichts wird ungesehen übernommen. Nach dem Anlegen wird der neue Kurs automatisch
-     als Zielkurs der Zeile eingetragen.
-   - **"+ Jahrgang"**: fügt direkt unter der Zeile eine neue Zeile mit demselben Quellkurs ein, um einen
-     Kurs bequem auf mehrere Jahrgänge/Zielkurse aufzuteilen, ohne den Quellkurs erneut auswählen zu müssen.
-   - **"Split durchführen"**: verarbeitet alle vollständig ausgefüllten Zeilen nacheinander (mit
-     Fortschrittsbalken). Pro Zeile werden alle Schüler:innen des Quellkurses ermittelt, die dem gewählten
-     Jahrgang angehören; für jede Person wird geprüft, ob sie den Zielkurs schon hat (dann keine Dopplung)
-     – in jedem Fall wird sie aber aus dem Quellkurs entfernt. Noten-/Zeugnisrelevante Felder
-     (Note, "auf Zeugnis", Bemerkungstext, Epochal-Kennzeichen) werden beim Verschieben vom
-     Quell-Leistungsdaten-Eintrag übernommen, Kursart/Wochenstunden/Kursleitung kommen vom Zielkurs.
-     **Sicherheitsgarantie:** Schlägt das Anlegen im Zielkurs für eine Person fehl, wird ihr
-     Quellkurs-Eintrag *nicht* gelöscht – so kann niemand eine Fachbelegung komplett verlieren, nur weil
-     ein einzelner Schreibvorgang scheitert (isoliert getestet, siehe "Fehlerbehebungen" unten).
-   - **"Automatischer Vorschlag"** (oberhalb der Tabelle, optional): erspart bei einem Kurs mit vielen
-     Jahrgängen das manuelle Anlegen jeder einzelnen Zeile. Kurs wählen und **"Vorschlag erzeugen"**
-     klicken – das Tool ermittelt anhand der aktuell im Kurs eingeschriebenen Schüler:innen, welche
-     Jahrgänge vorkommen (mit Schülerzahl je Jahrgang), und schlägt je Jahrgang einen Zielkurs vor: Kürzel
-     `<Quellkurs>-<Jahrgang>`, wobei ein bereits vorhandener gleichnamiger Kurs wiederverwendet wird, sonst
-     bei "Übernehmen" neu angelegt. Bezeichnung/Fach/Kursart/Wochenstunden werden je Zeile vom Quellkurs
-     vorbelegt, sind aber frei änderbar (relevant nur, wenn für die Zeile tatsächlich ein neuer Kurs
-     angelegt wird). Über Checkboxen lässt sich auswählen, welche Zeilen übernommen werden sollen; das
-     Zielkurs-Feld akzeptiert wie gewohnt sowohl einen vorhandenen Kurs (Autocomplete) als auch einen frei
-     eingegebenen neuen Namen – geben zwei Zeilen denselben Namen ein, landen beide im selben, einmalig neu
-     angelegten Kurs (dessen Jahrgangs-Zuordnung dann die Vereinigung der beteiligten Jahrgänge ist). Klick
-     auf **"Ausgewählte übernehmen"** legt die dafür nötigen neuen Kurse an und hängt die ausgewählten
-     Zeilen unten an die "Split in Jahrgangskurse"-Tabelle an – verschoben wird dabei noch niemand, das
-     bleibt weiterhin Sache von "Split durchführen". Direkt danach lässt sich der nächste Kurs wählen und
-     vorschlagen.
-
-   **"Split in Klassenkurse"**: direkt darunter, strukturell identisch zu "Split in Jahrgangskurse", aber
-   nach Klasse statt Jahrgang gruppiert (eigene Tabelle mit "+ Klasse" statt "+ Jahrgang", eigenes
-   `state.splitKlasseRows`). Ein Unterschied: Kurse kennen in Schild keine direkte Klassen-Zuordnung
-   (nur `idJahrgaenge`), daher wird beim Anlegen eines Zielkurses über "+ Kurs" als Jahrgangs-Vorschlag
-   der Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer. Auch
-   hier gibt es oberhalb der Tabelle denselben **"Automatischer Vorschlag"**-Bereich wie bei "Split in
-   Jahrgangskurse" (Kurs wählen, "Vorschlag erzeugen", Zeilen prüfen/anpassen/auswählen, "Ausgewählte
-   übernehmen"), nur nach Klasse statt Jahrgang gruppiert. Werden beim Neuanlegen mehrere Zeilen zu einem
-   gemeinsamen (neuen) Zielkurs zusammengeführt, ist dessen Jahrgangs-Zuordnung die Vereinigung der
-   `idJahrgang`-Werte aller beteiligten Klassen.
-
-   **"Kurse ohne Forms-Wahl"** (bewusst *nach* den beiden Split-Bereichen platziert, siehe unten): vergleicht
-   für alle in Schritt 4 gematchten Schüler:innen ihre aktuellen Schild-Kurse mit ihren gematchten
-   Forms-Kurswahlen aus Schritt 5 und findet Leistungsdaten-Einträge zu Kursen, die laut Forms nicht (mehr)
-   gewählt wurden – z.B. Reste einer alten AG-Wahl. Setzt einen abgeschlossenen Forms-Abgleich voraus
-   (Schritte 3–5); ohne das erscheint eine Fehlermeldung statt Ergebnissen. **Berücksichtigt dabei auch die
-   oben konfigurierten Splits**: Liegt ein aktueller Kurs auf einem Zielkurs eines Jahrgangs- oder
-   Klassen-Splits (auch mehrstufig, z.B. erst Jahrgangs- dann Klassen-Split), gilt rückwirkend der
-   ursprüngliche Quellkurs als gewählt – ein frisch gesplitteter Kurs wird also nicht fälschlich als
-   "nicht gewählt" gemeldet, nur weil er selbst nie Teil einer Forms-Kurswahl war (genau deshalb steht
-   dieser Abschnitt hinter den Split-Bereichen: er liest deren Konfiguration mit). Da reguläre Fachkurse
-   (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage zu tun haben und sonst immer als "nicht gewählt"
-   auftauchen würden, **muss** der Vergleich zunächst auf mindestens ein Fach und eine Kursart eingegrenzt
-   werden (Checkboxen, vorbelegt mit allen Fächern/Kursarten, die tatsächlich in geladenen Kursen vorkommen
-   – nicht der komplette Schild-Fächerkatalog). Je eine **"alle"-Checkbox** über den beiden Gruppen
-   wählt die gesamte Gruppe auf einmal an oder ab; die zuletzt getroffene Auswahl wird persistiert
-   (localStorage + JSON-Export) und beim nächsten Öffnen wiederhergestellt. Die Ergebnistabelle
-   unterstützt:
+   Spaltenzuordnung, beide Matching-Tabellen, Übertragungs-Defaults, aber auch die auf der Wartungsseite
+   konfigurierten Splits/Filter – der Zustand ist ja geteilt) wird automatisch im Browser (`localStorage`)
+   gesichert und beim nächsten Öffnen der Seite wiederhergestellt. Zusätzlich kann der Zustand als
+   JSON-Datei exportiert/importiert werden, z.B. um ihn an eine Kolleg:in weiterzugeben oder zu sichern.
+   Über "Zustand zurücksetzen" (mit Sicherheitsabfrage) lässt sich der komplette gespeicherte Zustand
+   löschen und ganz von vorne beginnen – z.B. nach einem Testlauf mit falschen Daten oder zu Beginn einer
+   neuen Umfragerunde im nächsten Halbjahr. Denselben Bereich gibt es identisch als Schritt 4 auf der
+   [Wartungsseite](#wartung-wartunghtml) – praktisch, um Export/Import/Reset dort zu erledigen, ohne
+   zwischen den Seiten wechseln zu müssen.
+8. **Kurse ohne Forms-Wahl** (sichtbar sobald Schritt 2 abgeschlossen ist): vergleicht für alle in
+   Schritt 4 gematchten Schüler:innen ihre aktuellen Schild-Kurse mit ihren gematchten Forms-Kurswahlen
+   aus Schritt 5 und findet Leistungsdaten-Einträge zu Kursen, die laut Forms nicht (mehr) gewählt wurden
+   – z.B. Reste einer alten AG-Wahl. Setzt einen abgeschlossenen Forms-Abgleich voraus (Schritte 3–5);
+   ohne das erscheint eine Fehlermeldung statt Ergebnissen. Bleibt bewusst hier im Wizard statt auf der
+   [Wartungsseite](#wartung-wartunghtml), da die Prüfung zwingend die hier laufenden Forms-Daten braucht
+   (siehe dort). **Berücksichtigt dabei auch die auf der Wartungsseite konfigurierten Splits**: Liegt ein
+   aktueller Kurs auf einem Zielkurs eines Jahrgangs- oder Klassen-Splits (auch mehrstufig, z.B. erst
+   Jahrgangs- dann Klassen-Split), gilt rückwirkend der ursprüngliche Quellkurs als gewählt – ein frisch
+   gesplitteter Kurs wird also nicht fälschlich als "nicht gewählt" gemeldet, nur weil er selbst nie Teil
+   einer Forms-Kurswahl war. Da reguläre Fachkurse (Mathematik, Deutsch, …) nichts mit der Forms-Umfrage
+   zu tun haben und sonst immer als "nicht gewählt" auftauchen würden, **muss** der Vergleich zunächst auf
+   mindestens ein Fach und eine Kursart eingegrenzt werden (Checkboxen, vorbelegt mit allen
+   Fächern/Kursarten, die tatsächlich in geladenen Kursen vorkommen – nicht der komplette
+   Schild-Fächerkatalog). Je eine **"alle"-Checkbox** über den beiden Gruppen wählt die gesamte Gruppe auf
+   einmal an oder ab; die zuletzt getroffene Auswahl wird persistiert (localStorage + JSON-Export) und
+   beim nächsten Öffnen wiederhergestellt. Der Button **"Kursbelegung aktualisieren"** lädt bei Bedarf nur
+   die Kursliste neu (z.B. wenn parallel in Schild selbst oder auf der Wartungsseite etwas geändert
+   wurde). Die Ergebnistabelle unterstützt:
    - **Sortierbare Spalten** (Schüler, Fach, Kursart, Kurs, Leistungsdaten-ID) – Klick auf die
      Spaltenüberschrift, wie bei "Schüler ohne Forms-Abgabe" in Schritt 4a.
    - **Ein Suchfeld**, das live über Schüler-, Fach-, Kursart- und Kurstext filtert.
    - **Löschen einzeln** (Button je Zeile) oder **über Checkboxen mehrere auf einmal** (alle standardmäßig
      ausgewählt).
 
-   **"Leere Kurse suchen"**: letzter Nachbereitungs-Baustein, findet Kurse, denen laut zuletzt geladenem
-   Datenstand (Schritt 2 bzw. "Kursbelegung aktualisieren") **kein einziger Schüler** zugeordnet ist – z.B.
-   Kurse, die nach einem Split oder einer Bereinigung leer zurückgeblieben sind. Rein clientseitige Prüfung
-   über die bereits geladenen Kursdaten, kein zusätzlicher API-Aufruf nötig. Stilistisch an "Kurse ohne
-   Forms-Wahl" angelehnt (Fach-/Kursart-Checkboxen mit je einer "alle"-Checkbox, sortierbare Ergebnistabelle,
-   Suchfeld, Einzel- und Mehrfachlöschen), verwendet aber bewusst eine **eigene, unabhängig gespeicherte**
-   Filterauswahl (`state.leereKurseFilter` statt `state.kurseOhneWahlFilter`) – so verändert eine
-   Fach-/Kursart-Auswahl in einem der beiden Bereiche nicht unbemerkt das Ergebnis des anderen. Anders als
-   bei "Kurse ohne Forms-Wahl" (das nur Leistungsdaten-Einträge löscht) löscht dieser Bereich den **Kurs
-   selbst** über `DELETE /kurse/delete/multiple` – Schild meldet den Erfolg pro Kurs einzeln zurück (z.B.
-   falls ein Kurs trotz leerer Schülerliste aus anderen Gründen nicht löschbar ist), daher ist hier anders
-   als beim Leistungsdaten-Löschen keine Bisection nötig. Nach erfolgreichem Löschen wird automatisch die
-   Kursbelegung aktualisiert (`refreshKursBelegung()`), damit gelöschte Kurse überall (Datalists,
-   Split-Tabellen, Matching-Vorschläge) sofort verschwinden.
+## Wartung (`wartung.html`)
 
-   **Hinweis (Stand Juli 2026):** `DELETE /kurse/delete/multiple` ist auf dem SVWS-Server serverseitig auf
-   den Server-Entwicklungsmodus beschränkt (`ServerMode.DEV` in `APIKurse.java`, während Anlegen/Ändern nur
-   `ServerMode.STABLE` verlangen) und schlägt im normalen Stable-Betrieb mit einem Fehler fehl – "Ausgewählte
-   löschen"/"Löschen" in diesem Bereich funktionieren also aktuell auf den meisten Servern nicht. Als
-   Workaround gibt es den Button **"Ausgewählte mit Sortierung 0 versehen"**: er patcht bei den per Checkbox
-   ausgewählten Kursen das Feld `sortierung` auf `0` (`PATCH /kurse/{id}`, läuft im normalen Server-Modus,
-   dieselbe Checkbox-Auswahl wie bei "Ausgewählte löschen"). In Schild3 selbst erscheinen diese Kurse dann bei der Sortierung
-   "Benutzerdefiniert" ganz oben und lassen sich dort markieren und per Rechtsklick-Kontextmenü löschen.
+Eigenständige Seite für Werkzeuge, die nur auf dem aktuellen Schild-Kursdatenbestand arbeiten und keinen
+Forms-Import brauchen – man muss sich beim reinen Aufräumen von Kursen also nicht durch den ganzen
+Wahlabgleich-Workflow denken. Oben verlinkt sie zurück zu `index.html` und umgekehrt. Verbindungsdaten
+(Host, Schema, Benutzername, Schuljahr, Abschnitt) werden mit dem Kurswahlen-Abgleich geteilt (derselbe
+localStorage-Schlüssel) und auf beiden Seiten automatisch vorausgefüllt – nur das Passwort wird wie überall
+in diesem Tool nie gespeichert und muss auf jeder Seite einzeln eingegeben werden (funktioniert
+zuverlässig, wenn beide Seiten über denselben lokalen Webserver oder in Chrome direkt per `file://`
+geöffnet werden; manche Browser wie Firefox trennen bei `file://`-URLs den localStorage pro Datei, dann
+braucht jede Seite ihre eigene Verbindungseingabe).
+
+Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
+Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
+**3. Wartung** mit vier Bausteinen:
+
+- **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
+  ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr
+  existierenden Kurs zeigt – letzteres z.B. bei doppelt angelegten Einträgen für dasselbe Fach, bei denen
+  einer der beiden Kurse zwischenzeitlich in Schild gelöscht wurde (reiner Klassenunterricht *ohne*
+  Kursart wird nicht gemeldet). Über "Prüfen" werden alle geladenen Schüler:innen durchsucht (bei größeren
+  Schulen können das über 1000 sein – Fortschrittsbalken und Statustext zeigen laufend an, wie viele
+  bereits geprüft wurden und wie viele Treffer es bisher gibt); Treffer erscheinen in einer Tabelle mit
+  Auswahl-Checkboxen (alle vorausgewählt, inkl. Anzeige der betroffenen Kurs-ID), über "Ausgewählte
+  löschen" (mit Sicherheitsabfrage) lassen sich die markierten Leistungsdaten-Einträge dauerhaft aus
+  Schild entfernen. Weitere Kontrollen lassen sich über `js/check.js` ergänzen. An manchen Schulen trägt
+  auch regulärer Klassenunterricht eine eigene Kursart (z.B. "PUK") und taucht dadurch hier mit auf, obwohl
+  es kein echtes Problem ist – über eine ▾-Schaltfläche im Spaltenkopf "Kursart" (Checkbox-Popover, gleiches
+  Prinzip wie bei "Leere Kurse suchen" weiter unten, aus den tatsächlich gefundenen Treffern befüllt und
+  gespeichert in `state.checkLeererKursFilter`) lässt sich eine solche Kursart gezielt ausblenden; wirkt
+  nur auf die Anzeige, nicht auf die Prüfung selbst (die zugrundeliegende Kursart eines Treffers ist ja
+  erst deren Ergebnis, kann also nicht vorab eingegrenzt werden).
+
+- **"Split in Jahrgangskurse"**: verschiebt Schüler:innen eines Jahrgangs aus einem gemeinsam angelegten
+  Quellkurs (z.B. eine AG, die zunächst für alle Jahrgänge zusammen angelegt wurde) in einen
+  jahrgangsspezifischen Zielkurs. Eine Tabelle mit frei hinzufügbaren Zeilen (Quellkurs, Jahrgang,
+  Zielkurs) definiert die gewünschten Verschiebungen:
+  - **Quellkurs**/**Zielkurs**: Autocomplete-Felder wie in Wizard-Schritt 4/5, akzeptieren bewusst nur
+    *vorhandene* Kurse (zeigen zusätzlich die aktuelle Schülerzahl je Kurs in Klammern an, z.B.
+    "AGGT-Robotik (23)") – kein "Freitext legt automatisch einen Kurs an" wie in einer früheren Version,
+    das war zu intransparent.
+  - **Zielkurs, der noch nicht existiert**: über den Button **"+ Kurs"** neben dem Zielkurs-Feld öffnet
+    sich ein "Neuen Kurs anlegen"-Dialog, vorbelegt mit Vorschlägen aus dem Quellkurs (Kürzel-Vorschlag
+    `<Quellkurs-Kürzel>-<Jahrgang>`, Fach, Kursart, Wochenstunden) und dem Jahrgang dieser Zeile als
+    vorausgewähltem (aber änderbarem) Jahrgang – alle Werte bleiben im Dialog frei editierbar, nichts wird
+    ungesehen übernommen. Nach dem Anlegen wird der neue Kurs automatisch als Zielkurs der Zeile
+    eingetragen.
+  - **"+ Jahrgang"**: fügt direkt unter der Zeile eine neue Zeile mit demselben Quellkurs ein, um einen
+    Kurs bequem auf mehrere Jahrgänge/Zielkurse aufzuteilen, ohne den Quellkurs erneut auswählen zu müssen.
+  - **"Split durchführen"**: verarbeitet alle vollständig ausgefüllten Zeilen nacheinander (mit
+    Fortschrittsbalken). Pro Zeile werden alle Schüler:innen des Quellkurses ermittelt, die dem gewählten
+    Jahrgang angehören; für jede Person wird geprüft, ob sie den Zielkurs schon hat (dann keine Dopplung)
+    – in jedem Fall wird sie aber aus dem Quellkurs entfernt. Noten-/Zeugnisrelevante Felder (Note, "auf
+    Zeugnis", Bemerkungstext, Epochal-Kennzeichen) werden beim Verschieben vom Quell-Leistungsdaten-Eintrag
+    übernommen, Kursart/Wochenstunden/Kursleitung kommen vom Zielkurs. **Sicherheitsgarantie:** Schlägt
+    das Anlegen im Zielkurs für eine Person fehl, wird ihr Quellkurs-Eintrag *nicht* gelöscht – so kann
+    niemand eine Fachbelegung komplett verlieren, nur weil ein einzelner Schreibvorgang scheitert
+    (isoliert getestet, siehe "Fehlerbehebungen" unten).
+  - **"Automatischer Vorschlag"** (oberhalb der Tabelle, optional): erspart bei einem Kurs mit vielen
+    Jahrgängen das manuelle Anlegen jeder einzelnen Zeile. Kurs wählen und **"Vorschlag erzeugen"**
+    klicken – das Tool ermittelt anhand der aktuell im Kurs eingeschriebenen Schüler:innen, welche
+    Jahrgänge vorkommen (mit Schülerzahl je Jahrgang), und schlägt je Jahrgang einen Zielkurs vor: Kürzel
+    `<Quellkurs>-<Jahrgang>`, wobei ein bereits vorhandener gleichnamiger Kurs wiederverwendet wird, sonst
+    bei "Übernehmen" neu angelegt. Bezeichnung/Fach/Kursart/Wochenstunden werden je Zeile vom Quellkurs
+    vorbelegt, sind aber frei änderbar (relevant nur, wenn für die Zeile tatsächlich ein neuer Kurs
+    angelegt wird). Über Checkboxen lässt sich auswählen, welche Zeilen übernommen werden sollen; das
+    Zielkurs-Feld akzeptiert wie gewohnt sowohl einen vorhandenen Kurs (Autocomplete) als auch einen frei
+    eingegebenen neuen Namen – geben zwei Zeilen denselben Namen ein, landen beide im selben, einmalig neu
+    angelegten Kurs (dessen Jahrgangs-Zuordnung dann die Vereinigung der beteiligten Jahrgänge ist). Klick
+    auf **"Ausgewählte übernehmen"** legt die dafür nötigen neuen Kurse an und hängt die ausgewählten
+    Zeilen unten an die "Split in Jahrgangskurse"-Tabelle an – verschoben wird dabei noch niemand, das
+    bleibt weiterhin Sache von "Split durchführen". Direkt danach lässt sich der nächste Kurs wählen und
+    vorschlagen.
+
+- **"Split in Klassenkurse"**: direkt darunter, strukturell identisch zu "Split in Jahrgangskurse", aber
+  nach Klasse statt Jahrgang gruppiert (eigene Tabelle mit "+ Klasse" statt "+ Jahrgang", eigenes
+  `state.splitKlasseRows`). Ein Unterschied: Kurse kennen in Schild keine direkte Klassen-Zuordnung
+  (nur `idJahrgaenge`), daher wird beim Anlegen eines Zielkurses über "+ Kurs" als Jahrgangs-Vorschlag der
+  Jahrgang der gewählten Klasse vorausgewählt (`klasse.idJahrgang`) – frei änderbar wie immer. Auch hier
+  gibt es oberhalb der Tabelle denselben **"Automatischer Vorschlag"**-Bereich wie bei "Split in
+  Jahrgangskurse" (Kurs wählen, "Vorschlag erzeugen", Zeilen prüfen/anpassen/auswählen, "Ausgewählte
+  übernehmen"), nur nach Klasse statt Jahrgang gruppiert. Werden beim Neuanlegen mehrere Zeilen zu einem
+  gemeinsamen (neuen) Zielkurs zusammengeführt, ist dessen Jahrgangs-Zuordnung die Vereinigung der
+  `idJahrgang`-Werte aller beteiligten Klassen.
+
+- **"Leere Kurse suchen"**: findet Kurse, denen laut zuletzt geladenem Datenstand (Schild-Daten laden bzw.
+  "Kursbelegung aktualisieren") **kein einziger Schüler** zugeordnet ist – z.B. Kurse, die nach einem
+  Split oder einer Bereinigung leer zurückgeblieben sind. Rein clientseitige Prüfung über die bereits
+  geladenen Kursdaten, kein zusätzlicher API-Aufruf nötig; "Prüfen" läuft ohne Vorbedingung über alle
+  Kurse mit 0 Schüler:innen. Die Ergebnistabelle unterstützt:
+  - **Spaltenkopf-Filter** (Excel-artig): eine kleine ▾-Schaltfläche in den Spaltenköpfen "Fach" und
+    "Kursart" öffnet ein Popover mit Checkboxen der in den *aktuell gefundenen Treffern* tatsächlich
+    vorkommenden Werte – Auswahl wirkt sofort auf die Anzeige (kein erneutes "Prüfen" nötig) und wird
+    gespeichert (`state.leereKurseFilter`, eigener, unabhängig von "Kurse ohne Forms-Wahl" im Wizard
+    gespeicherter Filter).
+  - **Sortierbare Spalten** und **ein Suchfeld**, das live über Kurs-, Fach- und Kursart-Text filtert.
+  - **Löschen einzeln** oder **über Checkboxen mehrere auf einmal** – löscht anders als "Leistungsdaten
+    mit leerem Kurs" (das nur Leistungsdaten-Einträge löscht) den **Kurs selbst** über
+    `DELETE /kurse/delete/multiple`. Schild meldet den Erfolg pro Kurs einzeln zurück (z.B. falls ein Kurs
+    trotz leerer Schülerliste aus anderen Gründen nicht löschbar ist), daher ist hier anders als beim
+    Leistungsdaten-Löschen keine Bisection nötig. Nach erfolgreichem Löschen wird automatisch die
+    Kursbelegung aktualisiert (`refreshKursBelegung()`), damit gelöschte Kurse überall (Datalists,
+    Split-Tabellen) sofort verschwinden.
+  - **Hinweis (Stand Juli 2026):** `DELETE /kurse/delete/multiple` ist auf dem SVWS-Server serverseitig
+    auf den Server-Entwicklungsmodus beschränkt (`ServerMode.DEV` in `APIKurse.java`, während
+    Anlegen/Ändern nur `ServerMode.STABLE` verlangen) und schlägt im normalen Stable-Betrieb mit einem
+    Fehler fehl – "Ausgewählte löschen"/"Löschen" funktionieren also aktuell auf den meisten Servern
+    nicht. Als Workaround gibt es den Button **"Ausgewählte mit Sortierung 0 versehen"**: er patcht bei
+    den per Checkbox ausgewählten Kursen das Feld `sortierung` auf `0` (`PATCH /kurse/{id}`, läuft im
+    normalen Server-Modus, dieselbe Checkbox-Auswahl wie bei "Ausgewählte löschen"). In Schild3 selbst
+    erscheinen diese Kurse dann bei der Sortierung "Benutzerdefiniert" ganz oben und lassen sich dort
+    markieren und per Rechtsklick-Kontextmenü löschen.
+
+Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
+geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
+man dafür nicht extra zu `index.html` wechseln muss. "Zustand zurücksetzen" betrifft dabei ausdrücklich
+auch `index.html`, da beide sich denselben `localStorage` teilen – der Sicherheitsabfrage-Text weist
+darauf hin.
 
 ## Wichtige Entscheidungen
 
@@ -369,8 +411,9 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    unabhängig davon, was sich in der Zwischenzeit in Schild geändert hatte.
    **Fix:** `onComputePreview()` (`js/app.js`) leert `lernabschnittsdatenCache` jetzt zu Beginn jedes Laufs.
 
-6. **"Leistungsdaten mit leerem Kurs" (Schritt 8) fand bei mehreren fast identischen Einträgen eines
-   Fachs systematisch einen weniger, als tatsächlich betroffen waren.**
+6. **"Leistungsdaten mit leerem Kurs" (damals Teil von Schritt 8 in `index.html`, heute ein eigener
+   Baustein auf der [Wartungsseite](#wartung-wartunghtml)) fand bei mehreren fast identischen Einträgen
+   eines Fachs systematisch einen weniger, als tatsächlich betroffen waren.**
    Ursache: Der erste Wurf des Checks filterte auf `kursID == null`. Ein konkreter, vom Nutzer gelieferter
    Datensatz zeigte aber, dass **alle** Leistungsdaten-Einträge eine `kursID` trugen – auch der als "leer"
    wahrgenommene. Der Fall war: dasselbe Fach zweimal vergeben, mit zwei unterschiedlichen `kursID`-Werten
@@ -379,13 +422,14 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    ursprünglichen `kursID == null`-Filter aber gar nicht erst erfasst – die alte Logik hätte bei diesem
    Datensatz **null** Treffer gefunden, nicht "einen zu wenig".
    **Fix:** `findeLeistungsdatenMitLeeremKurs()` (`js/check.js`) bekommt zusätzlich `gueltigeKursIds` (ein
-   `Set` der aktuell in Schild existierenden Kurs-IDs, aus `kursById` in `js/app.js`) übergeben und meldet
-   jetzt beide Fälle: `kursID == null` **oder** `kursID` gesetzt, aber nicht in `gueltigeKursIds` enthalten.
-   Die Ergebnistabelle in Schritt 8 zeigt zusätzlich eine Kurs-ID-Spalte, damit der Unterschied zwischen
+   `Set` der aktuell in Schild existierenden Kurs-IDs, aus `kursById` in `js/wartung.js`) übergeben und
+   meldet jetzt beide Fälle: `kursID == null` **oder** `kursID` gesetzt, aber nicht in `gueltigeKursIds`
+   enthalten. Die Ergebnistabelle zeigt zusätzlich eine Kurs-ID-Spalte, damit der Unterschied zwischen
    "leer" und "verweist auf gelöschten Kurs" sichtbar ist.
 
-7. **Erneute Übertragung (Schritt 6) legte Personen, die zuvor per Split (Schritt 8) in einen
-   Jahrgangs-/Klassenkurs verschoben worden waren, wieder im alten, gesplitteten Quellkurs an.**
+7. **Erneute Übertragung (Schritt 6) legte Personen, die zuvor per Split (damals Teil von Schritt 8, heute
+   auf der Wartungsseite) in einen Jahrgangs-/Klassenkurs verschoben worden waren, wieder im alten,
+   gesplitteten Quellkurs an.**
    Ursache: "Vorschau berechnen" prüfte die Existenz eines Leistungsdaten-Eintrags nur gegen genau den in
    Schritt 5 gematchten Kurs. Nach einem Split hat die betroffene Person dort aber gar keinen Eintrag mehr
    (der Split hat ihn ins Zielkurs verschoben) – die Vorschau erkannte das fälschlich als "fehlt" und legte
@@ -402,14 +446,16 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
 ```text
 SchildKurswahlen/
   index.html                  UI-Grundgerüst des Wizards (8 Abschnitte)
-  css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung)
-  js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing)
-  js/svwsApi.js                SVWS-REST-Client
-  js/formsImport.js            xlsx-Einlesen, Spalten-Heuristik, Kurswahl-Extraktion
-  js/matching.js                Fuzzy-Matching + Verwaltung der persistenten Matching-Tabellen
-  js/storage.js                localStorage-Autosave + JSON-Export/Import (ohne Zugangsdaten)
-  js/check.js                  Nachbereitungs-Kontrollen (Schritt 8), reine Analyse-Funktionen
-  js/app.js                    Orchestrierung: verdrahtet UI-Events mit den obigen Modulen
+  wartung.html                 UI-Grundgerüst der Wartungsseite (Verbindung, Schild-Daten laden, Wartung)
+  css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung), von beiden Seiten genutzt
+  js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing, nur index.html)
+  js/svwsApi.js                SVWS-REST-Client, von beiden Seiten genutzt
+  js/formsImport.js            xlsx-Einlesen, Spalten-Heuristik, Kurswahl-Extraktion (nur index.html)
+  js/matching.js                Fuzzy-Matching + Verwaltung der persistenten Matching-Tabellen (nur index.html)
+  js/storage.js                localStorage-Autosave + JSON-Export/Import (ohne Zugangsdaten), von beiden Seiten genutzt
+  js/check.js                  Wartungs-Kontrollen, reine Analyse-Funktionen (nur wartung.html)
+  js/app.js                    Orchestrierung für index.html: verdrahtet UI-Events mit den obigen Modulen
+  js/wartung.js                 Orchestrierung für wartung.html: eigenständig, teilt sich state/localStorage mit js/app.js
   testdaten/                  Beispiel-Forms-Export zum Testen
 ```
 
@@ -431,8 +477,8 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `createKurs(kursDaten)` | `POST /kurse/create` | Legt einen neuen Kurs an, gibt ihn inkl. neuer ID zurück |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
-| `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch, Schritt 8) |
-| `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (Schritt 8, "Leere Kurse suchen") – Stand Juli 2026 serverseitig auf den Server-Entwicklungsmodus beschränkt, siehe Hinweis dort |
+| `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch; index.html Schritt 8 sowie mehrere wartung.html-Bausteine) |
+| `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (wartung.html "Leere Kurse suchen") – Stand Juli 2026 serverseitig auf den Server-Entwicklungsmodus beschränkt, siehe Hinweis dort |
 | `patchKurs(id, patch)` | `PATCH /kurse/{id}` | Ändert einzelne Felder eines Kurses (Merge-Patch nach RFC 7386, z.B. `{sortierung: 0}`) – anders als das Löschen im normalen Server-Modus nutzbar |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
@@ -484,10 +530,11 @@ Server-Rückmeldung aus dem Antwort-Body an (JSON oder Klartext, je nachdem was 
 
 ### `js/check.js`
 
-Analog zu `matching.js`/`formsImport.js` bewusst als reine Funktionen ohne eigenen Zustand und ohne
-API-Zugriff gehalten – das Holen der Daten übernimmt `app.js`, hier steckt nur die Analyse-Logik, damit sie
-sich isoliert testen lässt (siehe Node-Testskripte während der Entwicklung) und sich künftig leicht um
-weitere Kontrollen ergänzen lässt.
+Nur von `wartung.html`/`js/wartung.js` genutzt ("Leistungsdaten mit leerem Kurs"). Analog zu
+`matching.js`/`formsImport.js` bewusst als reine Funktionen ohne eigenen Zustand und ohne API-Zugriff
+gehalten – das Holen der Daten übernimmt `wartung.js`, hier steckt nur die Analyse-Logik, damit sie sich
+isoliert testen lässt (siehe Node-Testskripte während der Entwicklung) und sich künftig leicht um weitere
+Kontrollen ergänzen lässt.
 
 - `findeLeistungsdatenMitLeeremKurs(lernabschnittsdaten, gueltigeKursIds)`: liefert die
   Leistungsdaten-Einträge eines Lernabschnitts, die eine `kursart` tragen (also ursprünglich einem Kurs
@@ -496,15 +543,18 @@ weitere Kontrollen ergänzen lässt.
   gesetztes `kursID`, das auf einen inzwischen gelöschten Kurs zeigt, ist genauso "leer" wie `kursID: null`
   – zeigt sich in Schild aber identisch als leeres Kurs-Feld. Ohne den Vergleich gegen `gueltigeKursIds`
   wären solche hängenden Referenzen unentdeckt geblieben (siehe "Fehlerbehebungen" unten).
-- `CHECKS`: Registry aller Nachbereitungs-Kontrollen (`{id, label, findIssues}`) für eine generische
-  Bedienoberfläche in Schritt 8; aktuell ein Eintrag (`leistungsdatenLeererKurs`).
+- `CHECKS`: Registry aller Wartungs-Kontrollen (`{id, label, findIssues}`) für eine generische
+  Bedienoberfläche; aktuell ein Eintrag (`leistungsdatenLeererKurs`).
 
 ### `js/app.js`
 
-Hält den nicht-persistenten Laufzeitzustand (geladene Schild-Daten, geparste Forms-Datei,
-Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs der `index.html` mit den obigen
-Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung über
-`Storage.scheduleSave(state)` gesichert.
+Orchestrierung für `index.html`. Hält den nicht-persistenten Laufzeitzustand (geladene Schild-Daten,
+geparste Forms-Datei, Berechnungs-Zwischenergebnisse) und verdrahtet alle Buttons/Inputs von `index.html`
+mit den obigen Modulen. Der persistente Teil des Zustands (`state`) wird bei jeder relevanten Änderung
+über `Storage.scheduleSave(state)` gesichert. Die reinen Schild-Wartungswerkzeuge (Split, Leere Kurse,
+Leistungsdaten mit leerem Kurs) sitzen **nicht** hier, sondern eigenständig in `js/wartung.js` (siehe
+dort) – einzige Ausnahme ist "Kurse ohne Forms-Wahl" (Schritt 8) unten, die die hier laufenden Forms-Daten
+braucht.
 
 `pruneStaleKursMatches()`: läuft am Ende von `onLoadSchildData()` (Schritt 2), nachdem `kursById` aus den
 frisch geladenen Schild-Kursen aufgebaut wurde. Entfernt aus `state.kursMatching` alle nicht-ignorierten
@@ -512,13 +562,12 @@ Einträge, deren `targetId` nicht mehr in `kursById` existiert, und meldet die A
 Schritt 2. Ignorierte Einträge (keine `targetId`) bleiben unangetastet.
 
 `refreshKursBelegung()`: lädt nur `GET /kurse/abschnitt/{id}` neu (nicht den kompletten Schritt-2-Umfang)
-und ersetzt `schildKurse`/`kursById` durch den frischen Stand - inkl. der darin eingebetteten
-`schueler[]`-Arrays, aus denen die in Klammern angezeigten Teilnehmerzahlen (`kursLabelMitAnzahl()`)
-stammen. Ruft danach `pruneStaleKursMatches()`, `buildDatalists()`, `populateKurseOhneWahlFilters()` sowie
-beide `renderSplit*Table()` auf, damit alle Anzeigen synchron sind. Wird automatisch am Ende von Schritt 6
-(Übertragung, nur bei mindestens einem erfolgreichen Eintrag) sowie am Ende jedes Splits aufgerufen;
-zusätzlich manuell über den Button "Kursbelegung aktualisieren" am Anfang von Schritt 8
-(`onRefreshKursBelegung()`) anstoßbar - z.B. falls parallel direkt in Schild etwas geändert wurde.
+und ersetzt `schildKurse`/`kursById` durch den frischen Stand. Ruft danach `pruneStaleKursMatches()`,
+`buildDatalists()` und `populateKurseOhneWahlFilters()` auf. Wird automatisch am Ende von Schritt 6
+(Übertragung, nur bei mindestens einem erfolgreichen Eintrag) aufgerufen; zusätzlich manuell über den
+Button "Kursbelegung aktualisieren" am Anfang von Schritt 8 (`onRefreshKursBelegung()`) anstoßbar - z.B.
+falls parallel direkt in Schild oder auf der Wartungsseite etwas geändert wurde. `js/wartung.js` hat eine
+eigene, um die dort zusätzlich benötigten Split-Tabellen erweiterte Variante derselben Funktion.
 
 Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
 
@@ -532,22 +581,21 @@ Funktionen rund um Schritt 3a (Kurs-Rewrite) und 3b (Spaltenkürzel):
   Schritt 4 + 5 neu. Wird nach "Auswahl übernehmen" (Schritt 3), "Übernehmen" (Schritt 3a) und "Kürzel
   übernehmen" (Schritt 3b) aufgerufen.
 
-Funktionen rund um den "Neuen Kurs anlegen"-Dialog (verwendet von Schritt 5 *und* "Split in
-Jahrgangskurse" in Schritt 8 - bewusst generisch gehalten, damit jeder künftige Aufrufer denselben Dialog
-mit eigenen Vorschlägen und eigener Erfolgs-Aktion wiederverwenden kann):
+Funktionen rund um den "Neuen Kurs anlegen"-Dialog (hier nur noch für Schritt 5 gebraucht;
+`js/wartung.js` hat für seine Split-Bereiche eine eigene, unabhängige Kopie desselben Dialogs und
+derselben Funktionen – bewusste Duplikation statt eines gemeinsamen Moduls, siehe PLANUNG.md):
 
 - `populateCreateKursDialogOptions()`: befüllt das Fach-Dropdown und die Kursarten-Datalist im Dialog aus
   den in Schritt 2 geladenen Fächern/Kursarten. Wird nach jedem "Schild-Daten laden" neu aufgerufen.
 - `openCreateKursDialog(options)`: öffnet den nativen `<dialog>` und befüllt alle Felder als editierbare
   *Vorschläge* aus `options` (`displayText`, `kuerzelSuggestion`, `bezeichnungSuggestion`, `fachId`,
   `kursart`, `wochenstunden`, `jahrgangIds`). `options.onCreated(neuerKurs)` wird nach erfolgreichem
-  Anlegen aufgerufen und entscheidet kontextspezifisch, was mit dem neuen Kurs passiert (Schritt 5:
-  Eintrag in `state.kursMatching`; Split-Zeile: `row.zielkursId` setzen) - der Dialog selbst kennt diese
+  Anlegen aufgerufen und trägt den neuen Kurs in `state.kursMatching` ein - der Dialog selbst kennt diese
   Aufrufer-Logik nicht mehr, nur noch den generischen Callback (gemerkt in der Modul-Variable
   `createKursOnCreated`).
 - `renderCreateKursJahrgaenge(preselectIds)`: baut die Jahrgangs-Checkboxen; ohne `preselectIds` greift
-  die generische Vorauswahl `DEFAULT_JAHRGANG_KUERZEL` (05–10, EF, Q1, Q2), mit expliziten IDs (z.B. genau
-  der Jahrgang einer Split-Zeile) wird nur dieser vorausgewählt - beides bleibt im Dialog frei änderbar.
+  die generische Vorauswahl `DEFAULT_JAHRGANG_KUERZEL` (05–10, EF, Q1, Q2), mit expliziten IDs wird nur
+  dieser vorausgewählt - beides bleibt im Dialog frei änderbar.
 - `onCreateKursFormSubmit(evt)`: baut aus den Formularfeldern das `KursDaten`-Objekt, ruft
   `SvwsApi.createKurs()` auf, übernimmt bei Erfolg den neuen Kurs in `schildKurse`/`kursById`/die
   Datalists und ruft danach den zuvor über `openCreateKursDialog()` hinterlegten Callback auf.
@@ -566,10 +614,16 @@ Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen währe
   nicht die Matching-Tabellen in Schritt 4/5.
 - `onComputePreview()`: baut `transferPreviewRows` und prüft dabei je Person nicht nur, ob im gematchten
   Kurs direkt schon ein Leistungsdaten-Eintrag existiert, sondern über `resolveUrsprungsKurs()` (siehe
-  Schritt 8 unten) auch, ob ein vorhandener Eintrag über einen zwischenzeitlichen Split auf diesen Kurs
-  zurückführt (`existingViaSplit`) - siehe "Fehlerbehebungen" Nr. 7 oben.
-- `createBatchWithBisection(rows)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis die
-  einzelnen fehlerhaften Datensätze isoliert sind, statt einen ganzen Batch zu verwerfen.
+  Schritt 8 unten) auch, ob ein vorhandener Eintrag über einen zwischenzeitlichen, auf der Wartungsseite
+  konfigurierten Split auf diesen Kurs zurückführt (`existingViaSplit`) - siehe "Fehlerbehebungen" Nr. 7
+  oben.
+- `batchWithBisection(items, apiCall)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis
+  entweder ein Teil-Batch durchgeht oder die einzelnen fehlerhaften Datensätze isoliert sind, statt einen
+  ganzen Batch zu verwerfen (siehe Fehlerbehebung Nr. 2 oben, wo die Funktion ursprünglich unter dem Namen
+  `createBatchWithBisection()` speziell für Leistungsdaten entstand, bevor sie generalisiert wurde).
+  `items` müssen keine fertigen Payloads sein; `apiCall` entscheidet, was daraus gesendet wird,
+  `failed[].item` bleibt die Original-Referenz. Wird von `onExecuteTransfer()` und
+  `deleteKurseOhneWahlIds()` genutzt; `js/wartung.js` hat dieselbe Funktion als eigene Kopie.
 
 Statusfilter in Schritt 4/5:
 
@@ -580,97 +634,8 @@ Statusfilter in Schritt 4/5:
   die Schnellzugriffs-Buttons ("Nur unsichere anzeigen"/"Alle anzeigen"). Eine Zeile mit ungültiger,
   gerade eingetippter Eingabe wird unabhängig vom Filter immer angezeigt, damit sie nicht "verschwindet".
 
-Funktionen rund um Schritt 8 (Nachbereitung):
-
-- `onRunCheckLeererKurs()`: holt konkurrenzbegrenzt (`mapWithConcurrency`) die Lernabschnittsdaten aller
-  in Schritt 2 geladenen Schüler:innen, wendet `Check.CHECKS.leistungsdatenLeererKurs.findIssues()` an und
-  sammelt Treffer in `checkLeererKursResults`.
-- `renderCheckLeererKursTable()`: rendert die Ergebnistabelle mit vorausgewählten Checkboxen pro Zeile.
-- `onDeleteCheckLeererKurs()`: fragt vor dem Löschen per `confirm()` nach, ruft dann
-  `SvwsApi.deleteLeistungsdatenMultiple()` mit den ausgewählten IDs auf und entfernt erfolgreich gelöschte
-  Zeilen aus der Tabelle.
-- `batchWithBisection(items, apiCall)`: generische Verallgemeinerung des früheren
-  `createBatchWithBisection()` (siehe Fehlerbehebung Nr. 2) - funktioniert für beliebige Batch-Aufrufe
-  (Anlegen *und* Löschen), nicht nur für Leistungsdaten-Erstellung. `items` müssen keine fertigen Payloads
-  sein; `apiCall` entscheidet, was daraus gesendet wird, `failed[].item` bleibt die Original-Referenz.
-  Wird von `onExecuteTransfer()`, `onDeleteCheckLeererKurs()`, `onExecuteSplitJahrgang()`,
-  `onExecuteSplitKlasse()` und `deleteKurseOhneWahlIds()` genutzt.
-
-Funktionen rund um "Split in Jahrgangskurse" (Schritt 8):
-
-- `renderSplitJahrgangTable()` / `onSplitJahrgangAddRow()` / `onSplitJahrgangAddBelow()` /
-  `onSplitJahrgangRemoveRow()`: verwalten `state.splitJahrgangRows` (persistiert) und deren Darstellung.
-  Delegierte Change-/Click-Handler am statischen `#split-jahrgang-table`-Element bedienen alle Zeilen,
-  ohne nach jedem Re-Render neu verdrahtet werden zu müssen. Ist in einer Zeile bereits ein Quellkurs
-  gewählt, zeigt `jahrgangOptionsHtml()` hinter jedem Jahrgang zusätzlich die Schülerzahl dieses
-  Quellkurses in diesem Jahrgang an (z.B. "05 (12 SuS)"), ermittelt über `jahrgangAnzahlByKurs(quellkurs)`.
-- `onSplitJahrgangZielkursChange()`: löst das Zielkurs-Feld strikt auf einen vorhandenen Kurs auf (wie
-  `onSplitJahrgangQuellkursChange()`) - kein Freitext-Fallback.
-- `onSplitJahrgangCreateZielkurs()`: öffnet den (generalisierten, siehe unten) "Neuen Kurs
-  anlegen"-Dialog mit Vorschlägen aus dem Quellkurs/Jahrgang der Zeile; trägt den neu angelegten Kurs im
-  `onCreated`-Callback als Zielkurs der Zeile ein.
-- `buildSplitLeistungsdatenPayload(quellEintrag, zielkurs)`: baut den Leistungsdaten-Payload für den
-  Zielkurs - Noten-/Zeugnisfelder vom Quelleintrag, Kursart/Wochenstunden/Kursleitung vom Zielkurs.
-- `onExecuteSplitJahrgang()`: verarbeitet alle vollständigen Zeilen sequenziell. Pro Zeile: Kandidaten
-  über `schuelerById.get(s.id).idJahrgang` filtern (getrennt gezählt von Schüler:innen, die in
-  `schuelerById` gar nicht auftauchen, weil sie nicht im Status-Filter aus Schritt 2 enthalten sind - nur
-  Letzteres landet als Hinweis im Protokoll, "andere Jahrgänge im selben Quellkurs" ist normal und wird
-  nicht gemeldet), Lernabschnittsdaten konkurrenzbegrenzt laden, für jede Person Anlegen-im-Ziel (falls
-  nötig) und Löschen-aus-Quelle über `batchWithBisection()` ausführen. Wichtig: Die zum Löschen
-  vorgesehene Menge wird aus den *erfolgreichen* Anlege-Operationen abgeleitet (`fehlgeschlageneOps`-Set
-  über Objektreferenzen aus `createResult.failed`), damit ein fehlgeschlagenes Anlegen niemals zu einem
-  gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
-
-Funktionen rund um "Automatischer Vorschlag" (Schritt 8, oberhalb von "Split in Jahrgangskurse" - füllt
-dessen Tabelle vor, verschiebt selbst aber nichts):
-
-- `autosplitProposalRows` / `autosplitQuellkursId`: Laufzeit-only-Zwischenergebnis des zuletzt erzeugten
-  Vorschlags, bewusst nicht in `state`/localStorage persistiert (wie `transferPreviewRows` oder
-  `checkLeererKursResults`) - ein Vorschlag lässt sich jederzeit neu erzeugen, es geht nichts Wichtiges
-  verloren, solange er nicht über "Übernehmen" in `state.splitJahrgangRows` überführt wurde.
-- `onAutosplitVorschlag()`: löst den gewählten Quellkurs auf, gruppiert dessen eingebettetes `schueler[]`
-  über `schuelerById.get(s.id).idJahrgang` nach Jahrgang (Zählung getrennt nach "nicht im Status-Filter
-  enthalten", analog zu `onExecuteSplitJahrgang()`), und baut pro vorkommendem Jahrgang eine
-  Vorschlagszeile - Zielkurs-Vorschlag `<Quellkurs-Kürzel>-<Jahrgang>`, dabei per `schildKurse.find()` nach
-  einem bereits vorhandenen gleichnamigen Kurs gesucht (dann als vorhandener Kurs vorbelegt statt als
-  Neuanlage-Vorschlag). Bezeichnung/Fach/Kursart/Wochenstunden werden vom Quellkurs übernommen.
-- `renderAutosplitTable()` / `fachOptionsHtml()`: rendern `autosplitProposalRows` in `#autosplit-table`
-  (Checkbox je Zeile, Zielkurs-Feld mit derselben `kurs-datalist-anzahl`-Autocomplete wie die Split-Tabelle
-  selbst, Kursart mit der bestehenden `kursart-datalist`). `fachOptionsHtml()` ist das Fach-Pendant zu
-  `jahrgangOptionsHtml()`, da ein `<select>` nicht wie eine Datalist mehrfach im DOM wiederverwendet werden
-  kann.
-- `onAutosplitUebernehmen()`: liest beim Klick auf "Ausgewählte übernehmen" die *aktuellen* DOM-Werte der
-  angehakten Zeilen (nicht `autosplitProposalRows` - der Benutzer kann Felder frei editiert haben, gleiches
-  Prinzip wie `commitVisibleStudentMatches()`). Zielkurs-Text mit auflösbarer `[id]`-Kennung → vorhandener
-  Kurs, sonst gilt der Text als Kürzel eines neu anzulegenden Kurses; mehrere Zeilen mit *identischem*
-  eingegebenem Zielkurs-Text werden dafür zu einer Gruppe zusammengefasst, sodass nur ein einziger neuer
-  Kurs für sie entsteht (mit der Vereinigung ihrer Jahrgänge als `idJahrgaenge`) - das ist der Mechanismus
-  hinter "zwei Zielkurse gleich wählen, um sie zusammenzuführen". Fehlt einer Gruppe die Kursart (Pflichtfeld,
-  wie im "Neuen Kurs anlegen"-Dialog) oder schlägt `SvwsApi.createKurs()` fehl, wird die Gruppe übersprungen
-  und im Protokoll (`#autosplit-log`) vermerkt, statt den ganzen Übernahme-Vorgang abzubrechen. Alle
-  erfolgreich aufgelösten Zeilen (vorhandener Kurs oder erfolgreich neu angelegte Gruppe) werden als
-  `{quellkursId, jahrgangId, zielkursId}` an `state.splitJahrgangRows` angehängt und die Autosplit-UI
-  danach zurückgesetzt (bereit für den nächsten Kurs) - der tatsächliche Verschiebevorgang bleibt wie immer
-  Sache von "Split durchführen".
-
-"Split in Klassenkurse" (`renderSplitKlasseTable()`, `onSplitKlasse*()`, `onExecuteSplitKlasse()`,
-`state.splitKlasseRows`) ist bewusst ein separater, struktureller Zwilling der obigen Funktionen statt
-einer gemeinsamen generischen Engine - die beiden Dimensionen unterscheiden sich genug (Schülerfeld
-`idKlasse` vs. `idJahrgang`; Kurse kennen nur Jahrgänge, keine Klassen, daher andere
-Zielkurs-Anlage-Vorbelegung über `klasse.idJahrgang`), dass eine Abstraktion mehr Indirektion als Nutzen
-gebracht hätte. Echte Querschnittslogik (`batchWithBisection()`, `buildSplitLeistungsdatenPayload()`,
-`openCreateKursDialog()`, `fachOptionsHtml()`) bleibt geteilt.
-
-Analog dazu ist auch "Automatischer Vorschlag" für Klassen (`autosplitKlasseProposalRows`,
-`onAutosplitKlasseVorschlag()`, `renderAutosplitKlasseTable()`, `onAutosplitKlasseSelectAll()`,
-`onAutosplitKlasseUebernehmen()`) ein struktureller Zwilling der gleichnamigen Jahrgangs-Funktionen weiter
-oben - `klasseAnzahlByKurs()` ist dabei das Pendant zu `jahrgangAnzahlByKurs()`. Fachlicher Unterschied
-beim Neuanlegen von Zielkursen: `idJahrgaenge` des neuen Kurses wird aus `klasse.idJahrgang` der
-beteiligten Zeile(n) gebildet (vereinigt bei zusammengeführten Zeilen), nicht aus einem direkt gewählten
-Jahrgang - wie schon bei `onSplitKlasseCreateZielkurs()`.
-
-Funktionen rund um "Kurse ohne Forms-Wahl" (Schritt 8, bewusst *nach* den beiden Split-Blöcken im Code
-platziert, da sie deren Konfiguration liest):
+Funktionen rund um Schritt 8 ("Kurse ohne Forms-Wahl", einzige Wartungs-Kontrolle, die hier statt in
+`js/wartung.js` lebt - siehe Begründung oben im Datei-Kopfkommentar):
 
 - `populateKurseOhneWahlFilters()`: befüllt die Fach-/Kursart-Checkboxen aus den tatsächlich in
   `schildKurse` vorkommenden Werten (nicht dem vollen Fächerkatalog). Vorbelegung ist die zuletzt
@@ -683,12 +648,14 @@ platziert, da sie deren Konfiguration liest):
   jeweiligen Gruppe auf einmal. `updateKurseOhneWahlSelectAllCheckboxes()` hält umgekehrt die beiden
   "alle"-Checkboxen konsistent mit dem Zustand ihrer Gruppe (nur angehakt, wenn wirklich jede
   Einzel-Checkbox angehakt ist).
-- `buildSplitZielZuQuellMap()`: baut aus den vollständigen Zeilen *beider* Split-Bereiche
-  (`state.splitJahrgangRows` + `state.splitKlasseRows`) eine Zielkurs-ID → Quellkurs-ID-Abbildung.
+- `buildSplitZielZuQuellMap()`: baut aus den vollständigen Zeilen *beider* auf der Wartungsseite
+  konfigurierten Split-Bereiche (`state.splitJahrgangRows` + `state.splitKlasseRows`, geschrieben von
+  `js/wartung.js`, hier nur gelesen) eine Zielkurs-ID → Quellkurs-ID-Abbildung.
 - `resolveUrsprungsKurs(kursId, zielZuQuell)`: verfolgt einen Kurs rückwärts über ggf. mehrere
   Split-Schritte (Jahrgangs- *und* Klassen-Split können hintereinander angewendet worden sein) bis zum
   ursprünglichen, nicht selbst aus einem Split hervorgegangenen Kurs zurück, mit Zyklus-Schutz für
-  widersprüchliche Konfigurationen (isoliert getestet: mehrstufige Ketten, unbekannte IDs, Zyklen).
+  widersprüchliche Konfigurationen (isoliert getestet: mehrstufige Ketten, unbekannte IDs, Zyklen). Auch
+  von `onComputePreview()` (Schritt 6) genutzt.
 - `onRunKurseOhneWahl()`: baut zunächst pro Schritt-4-Match die Menge `chosenKursIds` (alle
   nicht-ignorierten Kurs-Treffer aus `state.kursMatching` für die Kurswahlen dieser Person), holt dann
   konkurrenzbegrenzt die Lernabschnittsdaten und meldet Leistungsdaten-Einträge mit `kursID`, die (a)
@@ -702,34 +669,98 @@ platziert, da sie deren Konfiguration liest):
   (`onDeleteKurseOhneWahlSingle()`) als auch das Mehrfach-Löschen über Checkboxen
   (`onDeleteKurseOhneWahlSelected()`), beide mit `confirm()`-Sicherheitsabfrage.
 
-Funktionen rund um "Leere Kurse suchen" (Schritt 8, letzter Nachbereitungs-Baustein), strukturell an
-"Kurse ohne Forms-Wahl" angelehnt, aber mit **eigenem, unabhängig gespeichertem** Filter-Zustand
-(`state.leereKurseFilter`), damit die beiden Bereiche sich nicht gegenseitig in der Fach-/Kursart-Auswahl
-beeinflussen:
+### `js/wartung.js`
 
-- `populateLeereKurseFilters()` / `persistLeereKurseFilter()` / `updateLeereKurseSelectAllCheckboxes()` /
-  `onLeereKurseFachSelectAll()` / `onLeereKurseKursartSelectAll()`: analog zu den gleichnamigen
-  `*KurseOhneWahl*`-Funktionen, nur auf `state.leereKurseFilter` statt `state.kurseOhneWahlFilter`.
-- `onRunLeereKurse()`: rein clientseitige Prüfung ohne API-Aufruf - filtert `schildKurse` auf die
-  gewählten Fächer/Kursarten und meldet jeden Kurs, dessen eingebettetes `schueler`-Array leer ist.
-- `filteredLeereKurseRows()`: wendet nur das Suchfeld auf `leereKurseResults` an (ungesortiert) - von
-  `renderLeereKurseTable()` für die Anzeige genutzt.
-- `renderLeereKurseTable()` / `compareLeereKurse()` / `onLeereKurseSortClick()`: Suchfilter, Sortierung
-  und Rendering der Ergebnistabelle, gleiches Muster wie `renderKurseOhneWahlTable()`.
-- `onLeereKurseSortierungNull()`: Workaround für das (Stand Juli 2026) serverseitig gesperrte
-  `DELETE /kurse/delete/multiple` (siehe Hinweis oben) - patcht per `SvwsApi.patchKurs(id, {sortierung: 0})`
-  konkurrenzbegrenzt (`mapWithConcurrency`) die per Checkbox ausgewählten Treffer (dieselbe
-  `.leere-kurse-row:checked`-Auswahl wie `onDeleteLeereKurseSelected()`), damit sie in Schild3 bei der
-  Sortierung "Benutzerdefiniert" ganz oben stehen und dort manuell markiert/gelöscht werden können.
-  Aktualisiert dabei auch das lokale `kursById`-Objekt, protokolliert Erfolg/Fehler pro Kurs.
-- `deleteLeereKurseIds(ids)`: löscht - anders als `deleteKurseOhneWahlIds()`, das nur Leistungsdaten
-  entfernt - die **Kurse selbst** über `SvwsApi.deleteKurseMultiple()`. Der Endpunkt antwortet pro Kurs
-  einzeln mit `{id, success, log[]}` statt alles-oder-nichts, daher keine `batchWithBisection()` nötig -
-  jede Antwort wird direkt ausgewertet und im Log protokolliert. Nach mindestens einem erfolgreichen
-  Löschen wird automatisch `refreshKursBelegung()` aufgerufen. Gemeinsame Basis für
-  `onDeleteLeereKurseSingle()` (Einzel-Löschen je Zeile) und `onDeleteLeereKurseSelected()`
-  (Mehrfach-Löschen über Checkboxen), beide mit `confirm()`-Sicherheitsabfrage vor dem endgültigen,
-  nicht rückgängig machbaren Löschen des Kurses.
+Orchestrierung für `wartung.html`, strukturell an `js/app.js` angelehnt, aber ein eigenständiges,
+paralleles Skript: eigene `state`-Instanz (`Storage.loadState()`), eigene Kopien von Verbindung/
+Schild-Daten-laden/"Neuen Kurs anlegen"-Dialog/Hilfsfunktionen (`$`, `escapeHtml`,
+`mapWithConcurrency`, `batchWithBisection`, `kursLabel`, `schuelerLabel`, `idFromLabel`) - bewusst
+dupliziert statt in ein gemeinsames Modul mit `js/app.js` ausgelagert (siehe Datei-Kopfkommentar sowie
+PLANUNG.md), passend zum bestehenden Stil des Projekts (kein Build-Schritt).
+
+- `kursLabelMitAnzahl(k)`: wie `kursLabel()`, aber mit Schülerzahl in Klammern (z.B. "AGGT-Robotik (23)"),
+  aus dem eingebetteten `schueler[]`-Array der zuletzt geladenen Kursdaten - Basis für die
+  `kurs-datalist-anzahl`-Autocomplete der Quell-/Zielkurs-Felder unten.
+- `refreshKursBelegung()`: lädt nur `GET /kurse/abschnitt/{id}` neu, baut `kursById`/die
+  `kurs-datalist-anzahl`-Datalist neu und rendert beide Split-Tabellen - Pendant zur gleichnamigen,
+  schlankeren Funktion in `js/app.js`. Wird automatisch am Ende jedes Splits sowie nach jedem
+  Kurs-Löschen aufgerufen; zusätzlich manuell über "Kursbelegung aktualisieren".
+- **"Leistungsdaten mit leerem Kurs"**: `onRunCheckLeererKurs()` holt konkurrenzbegrenzt
+  (`mapWithConcurrency`) die Lernabschnittsdaten aller geladenen Schüler:innen, wendet
+  `Check.CHECKS.leistungsdatenLeererKurs.findIssues()` an und sammelt Treffer in
+  `checkLeererKursResults`. `populateCheckLeererKursKursartFilter()` befüllt danach das
+  Kursart-Spaltenkopf-Popover aus den tatsächlich gefundenen Kursarten (z.B. um "PUK" bei Schulen
+  auszublenden, an denen regulärer Klassenunterricht ebenfalls eine Kursart trägt);
+  `persistCheckLeererKursFilter()`/`onCheckLeererKursFilterChange()` speichern die Auswahl in
+  `state.checkLeererKursFilter` (leeres Array = alles anzeigen) und rendern sofort neu, wie beim
+  Fach-/Kursart-Filter von "Leere Kurse suchen" unten. `filteredCheckLeererKursRows()` wendet den Filter
+  an, bevor `renderCheckLeererKursTable()` die Ergebnistabelle rendert; `onDeleteCheckLeererKurs()` löscht
+  die ausgewählten Einträge (mit `confirm()`-Sicherheitsabfrage).
+- **"Split in Jahrgangskurse"**: `renderSplitJahrgangTable()` / `onSplitJahrgangAddRow()` /
+  `onSplitJahrgangAddBelow()` / `onSplitJahrgangRemoveRow()` verwalten `state.splitJahrgangRows`
+  (persistiert, geteilt mit `index.html`/"Kurse ohne Forms-Wahl") und deren Darstellung - `select`-Feld
+  zeigt hinter jedem Jahrgang zusätzlich die Schülerzahl dieses Quellkurses in diesem Jahrgang an (z.B.
+  "05 (12 SuS)"), ermittelt über `jahrgangAnzahlByKurs(quellkurs)`. `onSplitJahrgangCreateZielkurs()`
+  öffnet den "Neuen Kurs anlegen"-Dialog mit Vorschlägen aus Quellkurs/Jahrgang der Zeile.
+  `buildSplitLeistungsdatenPayload(quellEintrag, zielkurs)` baut den Leistungsdaten-Payload für den
+  Zielkurs (Noten-/Zeugnisfelder vom Quelleintrag, Kursart/Wochenstunden/Kursleitung vom Zielkurs) -
+  gemeinsam mit dem Klassen-Split genutzt. `onExecuteSplitJahrgang()` verarbeitet alle vollständigen
+  Zeilen sequenziell: Kandidaten über `schuelerById.get(s.id).idJahrgang` filtern, Lernabschnittsdaten
+  konkurrenzbegrenzt laden, für jede Person Anlegen-im-Ziel (falls nötig) und Löschen-aus-Quelle über
+  `batchWithBisection()` ausführen. Die zum Löschen vorgesehene Menge wird aus den *erfolgreichen*
+  Anlege-Operationen abgeleitet (`fehlgeschlageneOps`-Set über Objektreferenzen aus `createResult.failed`),
+  damit ein fehlgeschlagenes Anlegen niemals zu einem gelöschten Quelleintrag ohne Ziel-Gegenstück führt.
+- **"Automatischer Vorschlag"** (Jahrgang): `autosplitProposalRows`/`autosplitQuellkursId` sind
+  Laufzeit-only-Zwischenergebnisse, bewusst nicht persistiert - ein Vorschlag lässt sich jederzeit neu
+  erzeugen. `onAutosplitVorschlag()` gruppiert das eingebettete `schueler[]` des gewählten Quellkurses
+  nach Jahrgang und baut pro vorkommendem Jahrgang eine Vorschlagszeile (Zielkurs-Vorschlag
+  `<Quellkurs-Kürzel>-<Jahrgang>`, ein bereits vorhandener gleichnamiger Kurs wird per `schildKurse.find()`
+  wiederverwendet). `renderAutosplitTable()` / `fachOptionsHtml()` rendern die Vorschlagstabelle
+  (`fachOptionsHtml()` ist das Fach-Pendant zu `jahrgangOptionsHtml()`, da ein `<select>` nicht wie eine
+  Datalist mehrfach im DOM wiederverwendet werden kann). `onAutosplitUebernehmen()` liest beim Klick auf
+  "Ausgewählte übernehmen" die *aktuellen* DOM-Werte der angehakten Zeilen (nicht `autosplitProposalRows` -
+  frei editierbar); mehrere Zeilen mit *identischem* Zielkurs-Text werden zu einer Gruppe zusammengefasst
+  (ein neuer Kurs mit vereinigten Jahrgängen). Fehlt einer Gruppe die Kursart oder schlägt das Anlegen
+  fehl, wird die Gruppe übersprungen und im Protokoll vermerkt. Erfolgreich aufgelöste Zeilen werden an
+  `state.splitJahrgangRows` angehängt, der eigentliche Verschiebevorgang bleibt Sache von "Split
+  durchführen".
+- **"Split in Klassenkurse"** (`renderSplitKlasseTable()`, `onSplitKlasse*()`, `onExecuteSplitKlasse()`,
+  `state.splitKlasseRows`) sowie **"Automatischer Vorschlag"** für Klassen (`autosplitKlasseProposalRows`,
+  `onAutosplitKlasseVorschlag()`, `renderAutosplitKlasseTable()`, `onAutosplitKlasseUebernehmen()`,
+  `klasseAnzahlByKurs()`) sind bewusst separate, strukturelle Zwillinge der Jahrgangs-Funktionen statt
+  einer gemeinsamen generischen Engine - die beiden Dimensionen unterscheiden sich genug (Schülerfeld
+  `idKlasse` vs. `idJahrgang`; Kurse kennen nur Jahrgänge, keine Klassen, daher andere
+  Zielkurs-Anlage-Vorbelegung: `idJahrgaenge` des neuen Kurses wird aus `klasse.idJahrgang` der beteiligten
+  Zeile(n) gebildet statt aus einem direkt gewählten Jahrgang, siehe `onSplitKlasseCreateZielkurs()`),
+  dass eine Abstraktion mehr Indirektion als Nutzen gebracht hätte. Echte Querschnittslogik
+  (`batchWithBisection()`, `buildSplitLeistungsdatenPayload()`, `openCreateKursDialog()`,
+  `fachOptionsHtml()`) bleibt geteilt.
+- **"Leere Kurse suchen"**: `onRunLeereKurse()` läuft ohne Vorbedingung über alle `schildKurse` und
+  meldet jeden Kurs, dessen eingebettetes `schueler`-Array leer ist (rein clientseitig, kein API-Aufruf).
+  Die **Spaltenkopf-Filter** (Excel-artig, Fach/Kursart) sind der zentrale Unterschied zum
+  Fach-/Kursart-Checkblock von "Kurse ohne Forms-Wahl" in `index.html`:
+  `populateLeereKurseFilters()` befüllt zwei Checkbox-Popover (`#leere-kurse-fach-filter-popover`/
+  `#leere-kurse-kursart-filter-popover`, geöffnet über die ▾-Buttons `#leere-kurse-*-filter-btn`,
+  `toggleColFilterPopover()`/`closeColFilterPopovers()`) aus den *tatsächlich gefundenen* Werten in
+  `leereKurseResults` (nicht dem vollen Schild-Katalog) - läuft nach jedem "Prüfen" neu, nicht beim
+  Schild-Daten-laden. `persistLeereKurseFilter()` schreibt die Auswahl nach `state.leereKurseFilter`
+  (`{fachLabels: [], kursarten: []}`, eigener, unabhängig von `state.kurseOhneWahlFilter` gespeicherter
+  Zustand; leeres Array = kein Filter aktiv = alles anzeigen). `onLeereKurseFilterChange()` persistiert
+  *und* rendert sofort neu - keine erneute "Prüfen"-Runde nötig. `filteredLeereKurseRows()` wendet
+  Fach-/Kursart-Filter *und* Suchfeld auf `leereKurseResults` an; `renderLeereKurseTable()` /
+  `compareLeereKurse()` / `onLeereKurseSortClick()` übernehmen Sortierung und Rendering.
+  `onLeereKurseSortierungNull()`: Workaround für das (Stand Juli 2026) serverseitig gesperrte
+  `DELETE /kurse/delete/multiple` (siehe Hinweis oben) - patcht per
+  `SvwsApi.patchKurs(id, {sortierung: 0})` konkurrenzbegrenzt die per Checkbox ausgewählten Treffer, damit
+  sie in Schild3 bei der Sortierung "Benutzerdefiniert" ganz oben stehen. `deleteLeereKurseIds(ids)`
+  löscht die **Kurse selbst** über `SvwsApi.deleteKurseMultiple()` (antwortet pro Kurs einzeln mit
+  `{id, success, log[]}`, daher keine `batchWithBisection()` nötig) und ruft danach `refreshKursBelegung()`
+  auf.
+
+`onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
+`js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`
+weist im `confirm()`-Text ausdrücklich darauf hin, dass das Zurücksetzen wegen des geteilten `localStorage`
+auch `index.html` betrifft.
 
 ## Bekannte Grenzen / mögliche Erweiterungen
 
@@ -745,6 +776,10 @@ beeinflussen:
   ohnehin frische Lernabschnittsdaten und ist dadurch immer korrekt, unabhängig vom Stand der angezeigten
   Teilnehmerzahlen (siehe `refreshKursBelegung()` in der Programmstruktur unten für die automatische
   Aktualisierung dieser Zahlen).
+- `index.html` und `wartung.html` teilen sich Verbindungsdaten/Splits/Filter nur, wenn der Browser
+  `localStorage` zwischen den beiden Dateien tatsächlich teilt - bei `file://`-URLs macht das nicht jeder
+  Browser gleich (Chrome: ja, Firefox: nein, jede Datei isoliert). Über einen lokalen Webserver geöffnet
+  ist das Teilen immer zuverlässig.
 
 ## Einen SVWS-API-Endpunkt selbst prüfen (Swagger UI, ohne curl)
 

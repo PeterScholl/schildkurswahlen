@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kurswahlen-Abgleich: Wartung</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<nav class="page-nav"><a href="index.html">← Zum Kurswahlen-Abgleich (Forms ↔ Schild)</a></nav>
+<header>
+  <h1>Wartung</h1>
+  <p class="subtitle">
+    Eigenständige Werkzeuge zum Aufräumen der Schild-Kursdaten (Splitten, leere Kurse aufspüren, verwaiste
+    Leistungsdaten finden) – unabhängig vom Forms-Kurswahlen-Abgleich, ohne dass dafür Importdaten geladen
+    werden müssen.
+  </p>
+</header>
+
+<main>
+
+<section id="section-connection" class="card">
+  <h2>1. Verbindung zur Schild-Datenbank</h2>
+  <p class="hint">
+    Host, Schema, Benutzername, Schuljahr und Abschnitt werden mit dem Kurswahlen-Abgleich geteilt (im
+    Browser gespeichert) und dort wie hier automatisch vorausgefüllt – nur das Passwort wird aus
+    Sicherheitsgründen nie gespeichert und muss auf jeder Seite einzeln eingegeben werden.
+  </p>
+  <div class="grid-form">
+    <label>Host <small>(z.B. nightly.svws-nrw.de)</small>
+      <input type="text" id="conn-host" placeholder="nightly.svws-nrw.de" />
+    </label>
+    <label>Schema
+      <input type="text" id="conn-schema" placeholder="GymAbiLite" />
+    </label>
+    <label>Benutzername
+      <input type="text" id="conn-username" placeholder="admin" autocomplete="username" />
+    </label>
+    <label>Passwort <small>(wird nicht gespeichert)</small>
+      <input type="password" id="conn-password" autocomplete="current-password" />
+    </label>
+    <label>Schuljahr
+      <input type="number" id="conn-jahr" placeholder="2026" />
+    </label>
+    <label>Abschnitt
+      <input type="number" id="conn-abschnitt" min="1" max="2" placeholder="1" />
+    </label>
+  </div>
+  <button id="btn-connect">Verbinden</button>
+  <span id="connect-status" class="status-msg"></span>
+
+  <div id="status-katalog-wrapper" class="hidden">
+    <h3>Zu berücksichtigende Schüler-Status</h3>
+    <div id="status-katalog-container" class="checkbox-row"></div>
+  </div>
+</section>
+
+<section id="section-schild-data" class="card hidden">
+  <h2>2. Schild-Daten laden</h2>
+  <button id="btn-load-schild-data">Schüler &amp; Kurse laden</button>
+  <span id="schild-data-status" class="status-msg"></span>
+  <div id="schild-data-counts" class="counts"></div>
+</section>
+
+<section id="section-wartung" class="card hidden">
+  <h2>3. Wartung</h2>
+  <p class="hint">
+    Die in Klammern angezeigten Teilnehmerzahlen der Kurse stammen aus dem letzten "Schild-Daten laden"
+    oben und werden automatisch nach jedem Split/Löschen unten aktualisiert. Bei Bedarf (z.B. wenn parallel
+    in Schild selbst etwas geändert wurde) auch manuell möglich:
+  </p>
+  <button type="button" class="btn-secondary" id="btn-refresh-kursbelegung">Kursbelegung aktualisieren</button>
+  <span id="kursbelegung-refresh-status" class="status-msg"></span>
+
+  <h3>Leistungsdaten mit leerem Kurs</h3>
+  <p class="hint">
+    Findet Leistungsdaten-Einträge, die eine Kursart tragen (also ursprünglich einem Kurs zugeordnet
+    waren), deren Kurs-Verknüpfung aber fehlt <em>oder</em> auf einen nicht mehr existierenden Kurs zeigt
+    – letzteres z.B. bei doppelt angelegten Einträgen für dasselbe Fach, bei denen einer der beiden Kurse
+    zwischenzeitlich in Schild gelöscht wurde (Schild zeigt den Kurs dann als leer an, obwohl technisch
+    eine Kurs-ID hinterlegt ist). Normaler Klassenunterricht <strong>ohne</strong> Kursart wird nicht
+    gemeldet – regulärer Klassenunterricht mit Kursart PUK wird gemeldet. Über die ▾-Schaltfläche
+    im Spaltenkopf "Kursart" lässt sich eine solche Kursart gezielt ausblenden (Checkbox-Filter, wie bei
+    "Leere Kurse suchen" unten – wirkt nur auf die Anzeige, nicht auf die Prüfung selbst).
+  </p>
+  <button id="btn-run-check-leerer-kurs">Prüfen</button>
+  <span id="check-leerer-kurs-status" class="status-msg"></span>
+  <span id="check-leerer-kurs-treffer-hinweis" class="status-msg"></span>
+  <progress id="check-leerer-kurs-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div class="table-scroll">
+    <table id="check-leerer-kurs-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="check-leerer-kurs-select-all" /></th>
+          <th>Schüler</th>
+          <th>Fach</th>
+          <th>
+            Kursart
+            <span class="col-filter-wrap">
+              <button type="button" class="col-filter-btn" id="check-leerer-kurs-kursart-filter-btn" title="Nach Kursart filtern">▾</button>
+              <div class="col-filter-popover hidden" id="check-leerer-kurs-kursart-filter-popover">
+                <div class="col-filter-options" id="check-leerer-kurs-kursart-filter-options"></div>
+              </div>
+            </span>
+          </th>
+          <th>Kurs-ID</th>
+          <th>Leistungsdaten-ID</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button id="btn-delete-check-leerer-kurs" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <div id="check-leerer-kurs-log" class="log"></div>
+
+  <h3>Split in Jahrgangskurse</h3>
+  <p class="hint">
+    Verschiebt Schüler:innen eines Jahrgangs von einem Quellkurs in einen Zielkurs (z.B. um einen
+    gemeinsam angelegten Kurs nachträglich nach Jahrgängen aufzuteilen). Quell- und Zielkurs müssen
+    bereits existierende Kurse sein; fehlt der passende Zielkurs, legt der Button "+ Kurs" im Zielkurs-Feld
+    ihn über einen eigenen Dialog an (mit Vorschlägen aus dem Quellkurs vorbelegt, aber frei änderbar).
+    Bereits im Zielkurs vorhandene Schüler:innen werden nicht doppelt angelegt, aber trotzdem aus dem
+    Quellkurs entfernt. Über "+ Jahrgang" lässt sich zu einer Zeile schnell eine weitere Zeile mit demselben
+    Quellkurs anlegen, um einen Kurs auf mehrere Jahrgänge/Zielkurse aufzuteilen.
+  </p>
+
+  <h4>Automatischer Vorschlag</h4>
+  <p class="hint">
+    Kurs wählen und "Vorschlag erzeugen" klicken: ermittelt anhand der aktuell eingeschriebenen
+    Schüler:innen, welche Jahrgänge im Kurs vorkommen, und schlägt je Jahrgang einen Zielkurs vor
+    (Kürzel "&lt;Quellkurs&gt;-&lt;Jahrgang&gt;" – ein bereits vorhandener gleichnamiger Kurs wird
+    wiederverwendet, sonst bei "Übernehmen" neu angelegt). Bezeichnung/Fach/Kursart/Wochenstunden werden
+    vom Quellkurs übernommen, sind aber je Zeile änderbar. Das Zielkurs-Feld lässt sich frei anpassen:
+    einen vorhandenen Kurs wählen, den Namen ändern, oder mehreren Zeilen denselben Namen geben, um sie im
+    selben (ggf. neu angelegten) Kurs zusammenzuführen. Übernommene Zeilen landen unten in der Liste und
+    werden erst durch "Split durchführen" tatsächlich verschoben – danach lässt sich direkt der nächste
+    Kurs splitten.
+  </p>
+  <label>Kurs
+    <input type="text" id="autosplit-quellkurs-input" list="kurs-datalist-anzahl" placeholder="Kurs wählen" />
+  </label>
+  <button type="button" class="btn-secondary" id="btn-autosplit-vorschlag">Vorschlag erzeugen</button>
+  <span id="autosplit-status" class="status-msg"></span>
+  <div class="table-scroll hidden" id="autosplit-table-wrap">
+    <table id="autosplit-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="autosplit-select-all" checked /></th>
+          <th>Jahrgang</th>
+          <th>Schüler</th>
+          <th>Zielkurs</th>
+          <th>Bezeichnung</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>WStd.</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" id="btn-autosplit-uebernehmen" class="hidden">Ausgewählte übernehmen</button>
+  <div id="autosplit-log" class="log"></div>
+
+  <div class="table-scroll">
+    <table id="split-jahrgang-table" class="split-table">
+      <thead>
+        <tr>
+          <th>Quellkurs</th>
+          <th>Jahrgang</th>
+          <th>Zielkurs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" class="btn-secondary" id="btn-split-jahrgang-add-row">+ Zeile hinzufügen</button>
+  <button id="btn-split-jahrgang-execute">Split durchführen</button>
+  <span id="split-jahrgang-status" class="status-msg"></span>
+  <progress id="split-jahrgang-progress" class="progress-bar hidden" value="0" max="100"></progress>
+  <div id="split-jahrgang-log" class="log"></div>
+
+  <h3>Split in Klassenkurse</h3>
+  <p class="hint">
+    Wie "Split in Jahrgangskurse" oben, aber nach Klasse statt Jahrgang gruppiert – z.B. um einen gemeinsam
+    angelegten Kurs klassenweise aufzuteilen. Quell- und Zielkurs müssen bereits existierende Kurse sein;
+    fehlt der passende Zielkurs, legt der Button "+ Kurs" im Zielkurs-Feld ihn an (da Kurse in Schild keine
+    direkte Klassen-, sondern nur eine Jahrgangs-Zuordnung kennen, wird dabei der Jahrgang der gewählten
+    Klasse vorausgewählt, bleibt aber änderbar). Bereits im Zielkurs vorhandene Schüler:innen werden nicht
+    doppelt angelegt, aber trotzdem aus dem Quellkurs entfernt. Über "+ Klasse" lässt sich zu einer Zeile
+    schnell eine weitere Zeile mit demselben Quellkurs anlegen.
+  </p>
+
+  <h4>Automatischer Vorschlag</h4>
+  <p class="hint">
+    Wie beim Vorschlag für "Split in Jahrgangskurse" oben, nur nach Klasse statt Jahrgang gruppiert: Kurs
+    wählen und "Vorschlag erzeugen" klicken – ermittelt anhand der aktuell eingeschriebenen Schüler:innen,
+    welche Klassen im Kurs vorkommen, und schlägt je Klasse einen Zielkurs vor (Kürzel
+    "&lt;Quellkurs&gt;-&lt;Klasse&gt;" – ein bereits vorhandener gleichnamiger Kurs wird wiederverwendet,
+    sonst bei "Übernehmen" neu angelegt). Bezeichnung/Fach/Kursart/Wochenstunden werden vom Quellkurs
+    übernommen, sind aber je Zeile änderbar. Das Zielkurs-Feld lässt sich frei anpassen: einen vorhandenen
+    Kurs wählen, den Namen ändern, oder mehreren Zeilen denselben Namen geben, um sie im selben (ggf. neu
+    angelegten) Kurs zusammenzuführen. Übernommene Zeilen landen unten in der Liste und werden erst durch
+    "Split durchführen" tatsächlich verschoben.
+  </p>
+  <label>Kurs
+    <input type="text" id="autosplit-klasse-quellkurs-input" list="kurs-datalist-anzahl" placeholder="Kurs wählen" />
+  </label>
+  <button type="button" class="btn-secondary" id="btn-autosplit-klasse-vorschlag">Vorschlag erzeugen</button>
+  <span id="autosplit-klasse-status" class="status-msg"></span>
+  <div class="table-scroll hidden" id="autosplit-klasse-table-wrap">
+    <table id="autosplit-klasse-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="autosplit-klasse-select-all" checked /></th>
+          <th>Klasse</th>
+          <th>Schüler</th>
+          <th>Zielkurs</th>
+          <th>Bezeichnung</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>WStd.</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" id="btn-autosplit-klasse-uebernehmen" class="hidden">Ausgewählte übernehmen</button>
+  <div id="autosplit-klasse-log" class="log"></div>
+
+  <div class="table-scroll">
+    <table id="split-klasse-table" class="split-table">
+      <thead>
+        <tr>
+          <th>Quellkurs</th>
+          <th>Klasse</th>
+          <th>Zielkurs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button type="button" class="btn-secondary" id="btn-split-klasse-add-row">+ Zeile hinzufügen</button>
+  <button id="btn-split-klasse-execute">Split durchführen</button>
+  <span id="split-klasse-status" class="status-msg"></span>
+  <progress id="split-klasse-progress" class="progress-bar hidden" value="0" max="100"></progress>
+  <div id="split-klasse-log" class="log"></div>
+
+  <h3>Leere Kurse suchen</h3>
+  <p class="hint">
+    Findet Kurse, denen aktuell keine Schüler:innen zugeordnet sind – basierend auf dem zuletzt geladenen
+    Datenstand (Schritt 2 bzw. "Kursbelegung aktualisieren" oben), z.B. um Kurse aufzuspüren, die nach
+    einem Split oder einer Bereinigung leer zurückgeblieben sind. Über die kleinen ▾-Schaltflächen in den
+    Spaltenköpfen "Fach" und "Kursart" lässt sich die Ergebnisliste per Checkbox auf bestimmte Werte
+    eingrenzen (Auswahl wird gespeichert, wirkt sofort). Das Löschen betrifft den Kurs selbst, nicht nur
+    einzelne Leistungsdaten – Schild prüft dabei serverseitig, ob der Kurs überhaupt löschbar ist (z.B.
+    keine anderen Abhängigkeiten), und meldet das Ergebnis je Kurs einzeln zurück.
+  </p>
+  <p class="hint">
+    <strong>Hinweis (Stand Juli 2026):</strong> Das Löschen von Kursen über die SVWS-API ist serverseitig
+    noch nicht freigegeben (der Endpunkt ist auf den Server-Entwicklungsmodus beschränkt und antwortet im
+    Normalbetrieb mit einem Fehler) – "Ausgewählte löschen"/"Löschen" unten schlagen deshalb aktuell
+    typischerweise fehl. Leere Kurse lassen sich stattdessen direkt in der Schild3-Anwendung löschen: dort
+    mehrere Kurse markieren und über das Rechtsklick-Kontextmenü entfernen. Der Button
+    <strong>"Ausgewählte mit Sortierung 0 versehen"</strong> erleichtert das Auffinden: er setzt bei den
+    unten per Checkbox ausgewählten Kursen die Sortierung auf 0, sodass sie in Schild3 bei der Sortierung
+    "Benutzerdefiniert" ganz oben erscheinen und sich dort bequem gemeinsam markieren und löschen lassen.
+  </p>
+  <button id="btn-run-leere-kurse">Prüfen</button>
+  <span id="leere-kurse-status" class="status-msg"></span>
+
+  <div>
+    <input type="text" id="leere-kurse-suche" placeholder="Suchen (Kurs, Fach, Kursart) …" />
+    <span id="leere-kurse-treffer-hinweis" class="status-msg"></span>
+  </div>
+  <div class="table-scroll">
+    <table id="leere-kurse-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="leere-kurse-select-all" /></th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="kurs" data-label="Kurs">Kurs</button></th>
+          <th>
+            <button type="button" class="th-sort-btn" data-sort-key="fach" data-label="Fach">Fach</button>
+            <span class="col-filter-wrap">
+              <button type="button" class="col-filter-btn" id="leere-kurse-fach-filter-btn" title="Nach Fach filtern">▾</button>
+              <div class="col-filter-popover hidden" id="leere-kurse-fach-filter-popover">
+                <div class="col-filter-options" id="leere-kurse-fach-filter-options"></div>
+              </div>
+            </span>
+          </th>
+          <th>
+            <button type="button" class="th-sort-btn" data-sort-key="kursart" data-label="Kursart">Kursart</button>
+            <span class="col-filter-wrap">
+              <button type="button" class="col-filter-btn" id="leere-kurse-kursart-filter-btn" title="Nach Kursart filtern">▾</button>
+              <div class="col-filter-popover hidden" id="leere-kurse-kursart-filter-popover">
+                <div class="col-filter-options" id="leere-kurse-kursart-filter-options"></div>
+              </div>
+            </span>
+          </th>
+          <th><button type="button" class="th-sort-btn" data-sort-key="id" data-label="Kurs-ID">Kurs-ID</button></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button id="btn-delete-leere-kurse" class="btn-danger" disabled>Ausgewählte löschen</button>
+  <button type="button" class="btn-secondary" id="btn-leere-kurse-sortierung-null" disabled>Ausgewählte mit Sortierung 0 versehen</button>
+  <div id="leere-kurse-log" class="log"></div>
+
+  <datalist id="kurs-datalist-anzahl"></datalist>
+  <datalist id="kursart-datalist"></datalist>
+</section>
+
+<section id="section-save-load" class="card">
+  <h2>4. Speichern / Laden</h2>
+  <p class="hint">
+    Zugangsdaten (Passwort) werden niemals gespeichert – weder im Browser-Speicher noch in der
+    JSON-Datei. Der exportierte Zustand ist derselbe wie unter "Speichern/Laden" (Schritt 7) im
+    Kurswahlen-Abgleich – beide Seiten teilen sich denselben Speicher, daher spielt es keine Rolle, auf
+    welcher Seite exportiert/importiert wird.
+  </p>
+  <button id="btn-export-json">Als JSON speichern</button>
+  <label class="file-btn">JSON laden
+    <input type="file" id="import-json-input" accept=".json" />
+  </label>
+  <button id="btn-reset-state" class="btn-danger">Zustand zurücksetzen</button>
+  <span id="save-load-status" class="status-msg"></span>
+</section>
+
+<dialog id="create-kurs-dialog">
+  <form id="create-kurs-form" method="dialog">
+    <h3>Neuen Kurs anlegen</h3>
+    <p class="hint">Für: <strong id="create-kurs-source-text"></strong></p>
+    <div class="grid-form">
+      <label>Kürzel <small>(Pflichtfeld, eindeutige Kurs-Kennung in Schild)</small>
+        <input type="text" id="create-kurs-kuerzel" required maxlength="30" />
+      </label>
+      <label>Zeugnisbezeichnung <small>(optional)</small>
+        <input type="text" id="create-kurs-bezeichnung" />
+      </label>
+      <label>Fach <small>(optional)</small>
+        <select id="create-kurs-fach"><option value="">(kein Fach)</option></select>
+      </label>
+      <label>Kursart (allgemein) <small>(Pflichtfeld, z.B. AG, GK, ZK)</small>
+        <input type="text" id="create-kurs-kursart" list="kursart-datalist" required />
+      </label>
+      <label>Wochenstunden
+        <input type="number" id="create-kurs-wochenstunden" min="0" value="2" />
+      </label>
+      <label><input type="checkbox" id="create-kurs-sichtbar" checked /> Sichtbar in Schild</label>
+    </div>
+    <div>
+      <span>Jahrgänge <small>(vorbelegt: 05–10, EF, Q1, Q2, falls in Schild vorhanden)</small></span>
+      <div id="create-kurs-jahrgaenge-container" class="checkbox-row"></div>
+    </div>
+    <span id="create-kurs-status" class="status-msg"></span>
+    <div class="dialog-actions">
+      <button type="button" id="btn-create-kurs-cancel" class="btn-secondary">Abbrechen</button>
+      <button type="submit" id="btn-create-kurs-submit">Kurs anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+</main>
+
+<footer>
+  <p>Zustand wird automatisch im Browser (localStorage) zwischengespeichert – gemeinsam mit dem Kurswahlen-Abgleich.</p>
+</footer>
+
+<script src="js/svwsApi.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/check.js"></script>
+<script src="js/wartung.js"></script>
+</body>
+</html>

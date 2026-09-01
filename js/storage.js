@@ -18,10 +18,11 @@
       columnMapping: { nameCol: null, courseCols: [] },
       columnPrefixes: {}, // Spaltenindex (als String) -> Kürzel, das dem Kurstext vorangestellt wird
       courseSplitDelimiter: "", // Trennzeichen für Kurs-Rewrite (Schritt 3a); leer = kein Split
-      splitJahrgangRows: [], // [{quellkursId, jahrgangId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
-      splitKlasseRows: [], // [{quellkursId, klasseId, zielkursId}] - Schritt 8, alle drei nur gültige IDs
-      kurseOhneWahlFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Kurse ohne Forms-Wahl"; leer = alle (Default)
-      leereKurseFilter: { fachIds: [], kursarten: [] }, // Schritt 8 "Leere Kurse suchen"; leer = alle (Default)
+      splitJahrgangRows: [], // [{quellkursId, jahrgangId, zielkursId}] - wartung.html "Split in Jahrgangskurse", alle drei nur gültige IDs
+      splitKlasseRows: [], // [{quellkursId, klasseId, zielkursId}] - wartung.html "Split in Klassenkurse", alle drei nur gültige IDs
+      kurseOhneWahlFilter: { fachIds: [], kursarten: [] }, // index.html Schritt 8 "Kurse ohne Forms-Wahl"; leer = alle (Default)
+      leereKurseFilter: { fachLabels: [], kursarten: [] }, // wartung.html "Leere Kurse suchen" (Spaltenkopf-Filter); leer = alle (Default)
+      checkLeererKursFilter: { kursarten: [] }, // wartung.html "Leistungsdaten mit leerem Kurs" (Spaltenkopf-Filter, z.B. um "PUK" auszublenden); leer = alle (Default)
       schuelerMatching: {},
       kursMatching: {},
       transferStartRow: null, // Excel-Zeilennummer (1-basiert, Kopfzeile = Zeile 1); null/leer = alle Zeilen übertragen
@@ -61,6 +62,7 @@
       leistungsdatenDefaults: { ...defaults.leistungsdatenDefaults, ...(loaded.leistungsdatenDefaults || {}) },
       kurseOhneWahlFilter: { ...defaults.kurseOhneWahlFilter, ...(loaded.kurseOhneWahlFilter || {}) },
       leereKurseFilter: { ...defaults.leereKurseFilter, ...(loaded.leereKurseFilter || {}) },
+      checkLeererKursFilter: { ...defaults.checkLeererKursFilter, ...(loaded.checkLeererKursFilter || {}) },
       schuelerMatching: loaded.schuelerMatching || {},
       kursMatching: loaded.kursMatching || {},
       statusFilter: loaded.statusFilter || [],
