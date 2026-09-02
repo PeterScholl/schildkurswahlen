@@ -172,6 +172,35 @@
     return request("PATCH", `/kurse/${id}`, patch);
   }
 
+  // ---------- Gymnasiale Oberstufe (Gost) - für wartung.html "Blockung mit Leistungsdaten abgleichen" ----------
+
+  /** Liefert alle Abiturjahrgänge (Stufen der Oberstufe), die im angegebenen Schuljahresabschnitt bekannt
+   *  sind - inkl. eines Platzhalter-Eintrags `abiturjahr: -1` ("Allgemeine Vorlagen"), den Aufrufer selbst
+   *  herausfiltern müssen. */
+  async function getGostAbiturjahrgaenge(abschnittId) {
+    return request("GET", `/gost/abiturjahrgaenge/${abschnittId}`);
+  }
+
+  /** Liefert die Blockungen (Planungsstände) eines Abiturjahrgangs für ein bestimmtes Gost-Halbjahr
+   *  (0=EF.1 … 5=Q2.2). */
+  async function getGostBlockungen(abiturjahr, halbjahr) {
+    return request("GET", `/gost/abiturjahrgang/${abiturjahr}/${halbjahr}/blockungen`);
+  }
+
+  /** Liefert ein konkretes Blockungsergebnis (die tatsächliche Schüler-Kurs-Zuordnung einer Blockung,
+   *  gruppiert nach Schienen) anhand seiner Ergebnis-ID. */
+  async function getGostBlockungsergebnis(ergebnisId) {
+    return request("GET", `/gost/blockungen/zwischenergebnisse/${ergebnisId}`);
+  }
+
+  /** Liefert die Grunddaten einer Blockung inkl. `kurse[]` (mit Kursnummer/Suffix je Blockungs-Kurs -
+   *  das Blockungsergebnis selbst liefert das nicht). WICHTIG: Die Kurs-IDs innerhalb einer Blockung
+   *  (`Gost_Blockung_Kurse.ID`) sind eine eigene, von der normalen Kurse-Tabelle unabhängige ID-Reihe -
+   *  niemals gegen den normalen Kurskatalog (kursById) auflösen, siehe Fehlerbehebung in README.md. */
+  async function getGostBlockungsdaten(blockungsId) {
+    return request("GET", `/gost/blockungen/${blockungsId}`);
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -187,6 +216,10 @@
     getKursarten,
     getJahrgaenge,
     createKurs,
+    getGostAbiturjahrgaenge,
+    getGostBlockungen,
+    getGostBlockungsergebnis,
+    getGostBlockungsdaten,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,

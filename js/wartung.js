@@ -260,6 +260,7 @@
       populateCreateKursDialogOptions();
       renderSplitJahrgangTable();
       renderSplitKlasseTable();
+      populateBlockungAbgleichStufen();
     } catch (err) {
       setStatus(statusEl, err.message, "error");
     }
@@ -1816,6 +1817,329 @@
     await deleteLeereKurseIds([Number(evt.target.dataset.id)]);
   }
 
+  // ---------- 7. Blockung mit Leistungsdaten abgleichen ----------
+  // Gost-Kursart ist serverseitig ein festes Java-Enum (keine Katalog-API dafür) - Zuordnung aus dem
+  // SVWS-Server-Quellcode (de.svws_nrw.core.types.gost.GostKursart) übernommen, ändert sich praktisch nie.
+  const GOST_KURSART_LABELS = { 1: "LK", 2: "GK", 3: "ZK", 4: "PJK", 5: "VTF" };
+  function gostKursartLabel(id) {
+    return GOST_KURSART_LABELS[id] || `Kursart-ID ${id}`;
+  }
+
+  /** Extrahiert die Kursnummer aus einem Kurs-Kürzel (z.B. "SP-GK3" -> 3, "D-LK1" -> 1) - die am Ende
+   *  stehende Zahl. Liefert `null`, wenn das Kürzel nicht auf eine Zahl endet. Wird nur als Notlösung
+   *  gebraucht, um bei mehreren parallelen Kursen desselben Fachs/derselben Kursart (z.B. zwei GK-Kurse)
+   *  den laut Blockungs-Kursnummer richtigen zu finden - siehe Kommentar bei `onRunBlockungAbgleich()`. */
+  function parseKursnummerAusKuerzel(kuerzel) {
+    const m = /(\d+)\s*$/.exec(kuerzel || "");
+    return m ? Number(m[1]) : null;
+  }
+
+  /** GostHalbjahr-Enum-Index (0=EF.1 … 5=Q2.2), wie ihn `/gost/abiturjahrgang/{abiturjahr}/{halbjahr}/…`
+   *  erwartet. WICHTIG: Das `halbjahr`-Feld aus `GostJahrgang` (`/gost/abiturjahrgaenge/{idAbschnitt}`) ist
+   *  NICHT dieser Enum-Index, sondern schlicht "1" oder "2" - welche Hälfte des Schuljahres der jeweilige
+   *  Abschnitt ist (dieselbe 1/2-Zählung wie beim Verbindungs-Feld "Abschnitt"). Muss deshalb zusammen mit
+   *  dem Jahrgangs-Label (EF/Q1/Q2) erst in den echten Enum-Index umgerechnet werden - sonst landet man
+   *  (wie ursprünglich in dieser Funktion geschehen) bei der falschen, oft längst vergangenen Blockung. */
+  const GOST_JAHRGANG_BASIS = { EF: 0, Q1: 2, Q2: 4 };
+  function gostHalbjahrIndex(jahrgangLabel, schuljahresHalbjahr) {
+    const basis = GOST_JAHRGANG_BASIS[jahrgangLabel];
+    if (basis == null) return null;
+    return basis + (Number(schuljahresHalbjahr) === 2 ? 1 : 0);
+  }
+
+  let gostJahrgaenge = []; // [{abiturjahr, jahrgang, halbjahr, bezeichnung, ...}], ohne den Platzhalter abiturjahr=-1 und ohne Jahrgänge unterhalb der Oberstufe (EF/Q1/Q2)
+  let gostBlockungen = []; // [{id, name, istAktiv, idAktivesErgebnis, ...}] - für die aktuell gewählte Stufe
+  let blockungAbgleichResults = []; // [{schuelerLabel, fachLabel, kursart, kursBlockungLabel, kursLeistungsdatenLabel, hinweis}]
+
+  /** Lädt die verfügbaren Stufen (Abiturjahrgänge) für den aktuell verbundenen Schuljahresabschnitt - wird
+   *  einmalig nach "Schild-Daten laden" aufgerufen, analog zu den anderen Katalogen dort. Ein Fehler hier
+   *  (z.B. auf einer Schule ohne gymnasiale Oberstufe) soll "Schild-Daten laden" nicht blockieren. */
+  async function populateBlockungAbgleichStufen() {
+    const select = $("blockung-abgleich-stufe");
+    select.innerHTML = '<option value="">(wählen)</option>';
+    try {
+      const alle = await SvwsApi.getGostAbiturjahrgaenge(abschnittId);
+      gostJahrgaenge = alle.filter((j) => j.abiturjahr !== -1 && GOST_JAHRGANG_BASIS[j.jahrgang] != null);
+    } catch (err) {
+      gostJahrgaenge = [];
+      console.warn("Abiturjahrgänge konnten nicht geladen werden (evtl. keine gymnasiale Oberstufe):", err);
+      return;
+    }
+    select.innerHTML +=
+      '<option value="">(wählen)</option>' +
+      gostJahrgaenge
+        .map(
+          (j, idx) =>
+            `<option value="${idx}">${escapeHtml(j.jahrgang || "?")} (Abi ${j.abiturjahr})</option>`
+        )
+        .join("");
+  }
+
+  /** Stufe gewechselt: lädt die dafür verfügbaren Blockungen (im aktuellen Halbjahr dieser Stufe) und
+   *  wählt, falls vorhanden, die als aktiv markierte Blockung vor. */
+  async function onBlockungAbgleichStufeChange() {
+    const stufeSelect = $("blockung-abgleich-stufe");
+    const blockungSelect = $("blockung-abgleich-blockung");
+    const statusEl = $("blockung-abgleich-status");
+    gostBlockungen = [];
+    blockungSelect.innerHTML = '<option value="">(erst Stufe wählen)</option>';
+    blockungSelect.disabled = true;
+    $("btn-run-blockung-abgleich").disabled = true;
+    setStatus(statusEl, "", "");
+
+    const jahrgang = gostJahrgaenge[Number(stufeSelect.value)];
+    if (!jahrgang) return;
+
+    const halbjahrIndex = gostHalbjahrIndex(jahrgang.jahrgang, jahrgang.halbjahr);
+    if (halbjahrIndex == null) {
+      blockungSelect.innerHTML = '<option value="">(unbekanntes Halbjahr)</option>';
+      setStatus(statusEl, `Konnte das Gost-Halbjahr für Jahrgang "${jahrgang.jahrgang}" nicht bestimmen.`, "error");
+      return;
+    }
+
+    blockungSelect.innerHTML = '<option value="">Lade Blockungen …</option>';
+    try {
+      gostBlockungen = await SvwsApi.getGostBlockungen(jahrgang.abiturjahr, halbjahrIndex);
+    } catch (err) {
+      blockungSelect.innerHTML = '<option value="">(Fehler beim Laden)</option>';
+      setStatus(statusEl, err.message, "error");
+      return;
+    }
+    if (gostBlockungen.length === 0) {
+      blockungSelect.innerHTML = '<option value="">(keine Blockung für diese Stufe/dieses Halbjahr)</option>';
+      return;
+    }
+    const aktivIdx = gostBlockungen.findIndex((b) => b.istAktiv);
+    // Blockungs-/Ergebnis-ID werden mit angezeigt, damit sie sich beim manuellen Nachprüfen einzelner
+    // Treffer (z.B. über die Swagger-UI) nicht erst aus den Netzwerk-Requests des Browsers zusammensuchen
+    // lassen müssen.
+    blockungSelect.innerHTML = gostBlockungen
+      .map(
+        (b, idx) =>
+          `<option value="${idx}" ${idx === aktivIdx ? "selected" : ""}>${escapeHtml(b.name)}${b.istAktiv ? " (aktiv)" : ""} – Blockung-ID ${b.id}, Ergebnis-ID ${b.idAktivesErgebnis ?? "–"}</option>`
+      )
+      .join("");
+    blockungSelect.disabled = false;
+    $("btn-run-blockung-abgleich").disabled = false;
+  }
+
+  async function onRunBlockungAbgleich() {
+    const statusEl = $("blockung-abgleich-status");
+    const blockung = gostBlockungen[Number($("blockung-abgleich-blockung").value)];
+    if (!blockung) {
+      setStatus(statusEl, "Bitte eine Blockung auswählen.", "error");
+      return;
+    }
+    if (blockung.idAktivesErgebnis == null) {
+      setStatus(statusEl, `Blockung "${blockung.name}" hat kein aktives Ergebnis.`, "error");
+      return;
+    }
+
+    const progressEl = $("blockung-abgleich-progress");
+    $("btn-run-blockung-abgleich").disabled = true;
+    setStatus(statusEl, "Lade Blockungsergebnis …", "");
+    progressEl.classList.add("hidden");
+
+    let ergebnis;
+    let blockungsdaten;
+    try {
+      [ergebnis, blockungsdaten] = await Promise.all([
+        SvwsApi.getGostBlockungsergebnis(blockung.idAktivesErgebnis),
+        SvwsApi.getGostBlockungsdaten(blockung.id),
+      ]);
+    } catch (err) {
+      setStatus(statusEl, err.message, "error");
+      $("btn-run-blockung-abgleich").disabled = false;
+      return;
+    }
+
+    // Kursnummer/Suffix je Blockungs-Kurs (nur für die Anzeige, z.B. "GK 3") - kommt aus den
+    // Blockungsdaten, nicht aus dem Ergebnis. WICHTIG: Blockungs-Kurs-IDs (Gost_Blockung_Kurse.ID) sind
+    // eine eigene, von der normalen Kurse-Tabelle unabhängige ID-Reihe (siehe Fehlerbehebung in
+    // README.md) - dürfen also NIE gegen kursById aufgelöst werden, das kann einen zufällig
+    // gleich-nummerierten, aber völlig anderen echten Kurs liefern.
+    const blockungsKursInfo = new Map((blockungsdaten.kurse || []).map((k) => [k.id, k]));
+    const blockungsKursLabel = (kursId) => {
+      const k = blockungsKursInfo.get(kursId);
+      if (!k) return `Blockungs-Kurs-ID ${kursId}`;
+      return `Kurs-Nr. ${k.nummer}${k.suffix ? k.suffix : ""}`;
+    };
+
+    // Schüler-ID -> [{fachID, kursart, kursId}], aus allen Schienen des Ergebnisses aufgesammelt (ein/e
+    // Schüler:in taucht üblicherweise in mehreren Schienen mit je einem Kurs auf).
+    const blockungBySchueler = new Map();
+    for (const schiene of ergebnis.schienen || []) {
+      for (const kurs of schiene.kurse || []) {
+        for (const schuelerId of kurs.schueler || []) {
+          if (schuelerId == null) continue;
+          if (!blockungBySchueler.has(schuelerId)) blockungBySchueler.set(schuelerId, []);
+          blockungBySchueler.get(schuelerId).push({ fachID: kurs.fachID, kursart: gostKursartLabel(kurs.kursart), kursId: kurs.id });
+        }
+      }
+    }
+
+    const schuelerIds = Array.from(blockungBySchueler.keys());
+    if (schuelerIds.length === 0) {
+      setStatus(statusEl, "Diese Blockung enthält keine Schüler-Kurs-Zuordnungen.", "warn");
+      $("btn-run-blockung-abgleich").disabled = false;
+      return;
+    }
+
+    const beideRichtungen = $("blockung-abgleich-beide-richtungen").checked;
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    const fachLabel = (id) => {
+      const f = fachById.get(id);
+      return f ? `${f.kuerzel} – ${f.bezeichnung || ""}` : `Fach-ID ${id}`;
+    };
+    const kursLabelOrId = (id) => {
+      const k = kursById.get(id);
+      return k ? kursLabel(k) : `Kurs-ID ${id}`;
+    };
+
+    const total = schuelerIds.length;
+    let processed = 0;
+    progressEl.max = total;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+
+    const results = [];
+    let fehler = 0;
+    let nichtImStatusFilter = 0;
+    await mapWithConcurrency(schuelerIds, 6, async (schuelerId) => {
+      try {
+        const schueler = schuelerById.get(schuelerId);
+        // Die Blockung ist ein eingefrorener Snapshot und enthält auch längst ausgeschiedene/abgemeldete
+        // Schüler:innen, die im aktuell geladenen Status-Filter (Schritt 1) nicht mehr auftauchen - für
+        // die sind naturgemäß keine aktuellen Leistungsdaten zu erwarten. Ohne diesen Ausschluss würde
+        // praktisch jedes Fach dieser Person fälschlich als "fehlt in Leistungsdaten" gemeldet.
+        if (!schueler) {
+          nichtImStatusFilter++;
+          return;
+        }
+        const label = schuelerLabel(schueler);
+        const lad = await SvwsApi.getLernabschnittsdaten(schuelerId, abschnittId);
+
+        // Fach/Kursart für den Vergleich kommen aus dem bereits geladenen Kurskatalog (kursById), NICHT
+        // aus den Feldern fachID/kursart auf dem Leistungsdaten-Datensatz selbst (siehe Fehlerbehebung
+        // unten - die sind bei per Blockung "hochgeschriebenen" Einträgen nicht zuverlässig befüllt).
+        //
+        // Ein exakter Kurs-ID-Treffer ist strukturell unmöglich: Blockungs-Kurse (`Gost_Blockung_Kurse`)
+        // haben eine eigene, von der echten Kurse-Tabelle unabhängige ID-Reihe, ohne gespeicherte
+        // Verknüpfung dazwischen (siehe Fehlerbehebung unten) - der Vergleich läuft deshalb ausschließlich
+        // über Fach+Kursart, verfeinert um die Kursnummer (aus dem Kürzel geraten, s.u.), falls es mehrere
+        // parallele Kurse desselben Fachs/derselben Kursart gibt (z.B. zwei GK-Kurse).
+        const meineKursIds = new Set((lad.leistungsdaten || []).filter((l) => l.kursID != null).map((l) => l.kursID));
+        // Kurse, die bereits als "abweichender Kurs" (Ersatz für eine fehlende Blockungszeile) gemeldet
+        // wurden, dürfen bei "beide Richtungen" nicht zusätzlich als "nicht in Blockung" auftauchen - sonst
+        // erscheint derselbe tatsächliche Kurs für dasselbe Fach doppelt in der Ergebnisliste.
+        const alsErsatzVerwendeteKursIds = new Set();
+
+        for (const erwartet of blockungBySchueler.get(schuelerId)) {
+          const erwartetInfo = blockungsKursInfo.get(erwartet.kursId);
+          const erwartetNummer = erwartetInfo ? erwartetInfo.nummer : null;
+
+          const kandidaten = [];
+          for (const kid of meineKursIds) {
+            if (alsErsatzVerwendeteKursIds.has(kid)) continue; // nicht zweimal als Ersatz verwenden
+            const k = kursById.get(kid);
+            if (k && k.idFach === erwartet.fachID && k.kursartAllg === erwartet.kursart) kandidaten.push(kid);
+          }
+
+          if (kandidaten.length === 0) {
+            results.push({
+              schuelerLabel: label,
+              fachLabel: fachLabel(erwartet.fachID),
+              kursart: erwartet.kursart,
+              kursBlockung: blockungsKursLabel(erwartet.kursId),
+              kursLeistungsdaten: "– (fehlt)",
+              hinweis: "fehlt in Leistungsdaten",
+            });
+            continue;
+          }
+
+          // Genau ein Kandidat: eindeutig (einziger Kurs dieses Fachs/dieser Kursart), gilt als
+          // Treffer - keine Meldung nötig, auch ohne Kursnummer-Abgleich. Bei mehreren Kandidaten
+          // (parallele Kurse, z.B. zwei GK-Kurse) wird über die aus dem Kürzel geratene Kursnummer
+          // versucht, den richtigen eindeutig zu bestimmen; gelingt das, gilt das ebenfalls als Treffer.
+          // Nur wenn auch das nicht eindeutig gelingt, wird die Zeile gemeldet (bester Rateversuch als
+          // Anzeige, aber als unsicher gekennzeichnet).
+          const nummernTreffer =
+            erwartetNummer != null ? kandidaten.find((kid) => parseKursnummerAusKuerzel(kursById.get(kid).kuerzel) === erwartetNummer) : null;
+
+          if (kandidaten.length === 1) {
+            alsErsatzVerwendeteKursIds.add(kandidaten[0]);
+          } else if (nummernTreffer != null) {
+            alsErsatzVerwendeteKursIds.add(nummernTreffer);
+          } else {
+            const bestGuess = kandidaten[0];
+            alsErsatzVerwendeteKursIds.add(bestGuess);
+            results.push({
+              schuelerLabel: label,
+              fachLabel: fachLabel(erwartet.fachID),
+              kursart: erwartet.kursart,
+              kursBlockung: blockungsKursLabel(erwartet.kursId),
+              kursLeistungsdaten: `${kursLabelOrId(bestGuess)} (unsicher – ${kandidaten.length} passende Kurse, Kursnummer nicht eindeutig zuordenbar)`,
+              hinweis: "abweichender Kurs",
+            });
+          }
+        }
+
+        if (beideRichtungen) {
+          for (const kid of meineKursIds) {
+            if (alsErsatzVerwendeteKursIds.has(kid)) continue;
+            const k = kursById.get(kid);
+            results.push({
+              schuelerLabel: label,
+              fachLabel: k ? fachLabel(k.idFach) : `Kurs-ID ${kid}`,
+              kursart: k ? k.kursartAllg || "" : "",
+              kursBlockung: "– (nicht in Blockung)",
+              kursLeistungsdaten: kursLabelOrId(kid),
+              hinweis: "zusätzlich in Leistungsdaten",
+            });
+          }
+        }
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Prüfe ${processed} / ${total} Schüler:innen …`, "");
+      }
+    });
+
+    progressEl.classList.add("hidden");
+    blockungAbgleichResults = results;
+    renderBlockungAbgleichTable();
+    $("btn-run-blockung-abgleich").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} Abweichung(en) bei ${total} Schüler:innen gefunden` +
+        (fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : "") +
+        (nichtImStatusFilter
+          ? ` (${nichtImStatusFilter} Schüler:innen aus der Blockung sind nicht im aktuell geladenen Status-Filter enthalten und wurden übersprungen)`
+          : "") +
+        ".",
+      results.length ? "warn" : "ok"
+    );
+  }
+
+  function renderBlockungAbgleichTable() {
+    const tbody = document.querySelector("#blockung-abgleich-table tbody");
+    tbody.innerHTML = blockungAbgleichResults
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.schuelerLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.kursart)}</td>
+        <td>${escapeHtml(r.kursBlockung)}</td>
+        <td>${escapeHtml(r.kursLeistungsdaten)}</td>
+        <td>${escapeHtml(r.hinweis)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
   // ---------- 4. Speichern / Laden ----------
   // Identisch zu Schritt 7 in index.html/js/app.js (derselbe Storage.exportJson()/importJson(), derselbe
   // geteilte state) - bewusst als eigene Kopie hier, damit man für Export/Import/Reset nicht extra auf die
@@ -1937,6 +2261,9 @@
     });
     document.querySelector("#leere-kurse-table thead").addEventListener("click", onLeereKurseSortClick);
     updateLeereKurseSortIndicators();
+
+    $("blockung-abgleich-stufe").addEventListener("change", onBlockungAbgleichStufeChange);
+    $("btn-run-blockung-abgleich").addEventListener("click", onRunBlockungAbgleich);
 
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);

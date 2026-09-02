@@ -178,7 +178,7 @@ braucht jede Seite ihre eigene Verbindungseingabe).
 
 Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
 Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
-**3. Wartung** mit vier Bausteinen:
+**3. Wartung** mit fünf Bausteinen:
 
 - **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr
@@ -276,6 +276,20 @@ Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 de
     normalen Server-Modus, dieselbe Checkbox-Auswahl wie bei "Ausgewählte löschen"). In Schild3 selbst
     erscheinen diese Kurse dann bei der Sortierung "Benutzerdefiniert" ganz oben und lassen sich dort
     markieren und per Rechtsklick-Kontextmenü löschen.
+
+- **"Blockung mit Leistungsdaten abgleichen"** – vergleicht die Kurszuordnung einer Blockung der
+  gymnasialen Oberstufe mit den tatsächlich eingetragenen Leistungsdaten der Schüler:innen einer Stufe im
+  aktuellen Halbjahr, z.B. um manuell nachgetragene Umwahlen auf Vollständigkeit zu prüfen. **Stufe**
+  wählen (Abiturjahrgang, nicht der normale Sek-I-Jahrgang – die Oberstufe organisiert sich über den
+  voraussichtlichen Abiturjahrgang), danach **Blockung** (Planungsstand; die als aktiv markierte Blockung
+  ist vorausgewählt, verwendet wird deren aktives Ergebnis). "Abgleichen" prüft je Schüler:in und
+  Fach/Kursart, ob die Blockung einen Kurs vorsieht, der in den Leistungsdaten fehlt oder dort auf einen
+  *anderen* Kurs derselben Fach-/Kursart-Kombination zeigt (z.B. "SP-GK3" laut Blockung, aber "SP-GK4" in
+  den Leistungsdaten – ein Hinweis auf eine Umwahl in eine parallele Kursschiene, die in Schild noch
+  nachgetragen werden müsste). Über die Checkbox **"Auch Kurse zeigen, die nur in den Leistungsdaten
+  stehen …"** lässt sich optional auch die umgekehrte Richtung mit anzeigen (kann bei Kursen außerhalb der
+  Blockung, z.B. Sport/Religion, mehr Rauschen erzeugen, deshalb standardmäßig aus). Rein lesende Prüfung
+  ohne Lösch-/Änderungsfunktion.
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -441,6 +455,80 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
    zurückführt - dann gilt die Kombination ebenfalls als "bereits vorhanden" (Hinweis "bereits vorhanden
    (in Split-Zielkurs)" in der Vorschau-Tabelle) statt erneut angelegt zu werden.
 
+8. **"Blockung mit Leistungsdaten abgleichen" fand keine aktive Blockung bzw. zeigte für einen
+   Abiturjahrgang nur eine veraltete Blockung an.**
+   Ursache: Das Feld `halbjahr` aus `GostJahrgang` (`GET /gost/abiturjahrgaenge/{idAbschnitt}`) wurde
+   fälschlich direkt als der von `GET /gost/abiturjahrgang/{abiturjahr}/{halbjahr}/blockungen` erwartete
+   GostHalbjahr-Enum-Index (0=EF.1…5=Q2.2) verwendet. Tatsächlich ist es aber nur "1" oder "2" - welche
+   Hälfte des Schuljahres der angefragte Abschnitt ist (dieselbe Zählung wie beim Verbindungsfeld
+   "Abschnitt"). Für einen Q2-Jahrgang im 2. Schuljahres-Halbjahr wurde dadurch Index 2 (= Q1.1)
+   abgefragt statt des richtigen Index 5 (= Q2.2) - eine längst überholte, nicht mehr aktive Blockung.
+   **Fix:** Neue Funktion `gostHalbjahrIndex(jahrgangLabel, schuljahresHalbjahr)` (`js/wartung.js`)
+   rechnet Jahrgangs-Label (EF/Q1/Q2) und Schuljahres-Halbjahr (1/2) korrekt in den echten Enum-Index um.
+
+9. **"Blockung mit Leistungsdaten abgleichen" fand nach Fehlerbehebung 8 (falsches Gost-Halbjahr) zwar die
+   richtige, aktive Blockung, meldete aber *jeden einzelnen* Blockungs-Kurs als "fehlt in
+   Leistungsdaten" – auch für Schüler:innen, deren Leistungsdaten den Kurs nachweislich enthielten.**
+   Ursache: Der erste Wurf verglich über einen zusammengesetzten Schlüssel `fachID|kursart`, gebildet aus
+   den Feldern `fachID`/`kursart` *direkt auf dem Leistungsdaten-Datensatz*. Bei den über die
+   SVWS-eigene Blockungs-Funktion "hochschreiben" erzeugten Leistungsdaten-Einträgen scheinen diese Felder
+   nicht zuverlässig befüllt zu sein (vermutlich wird die Kursart dort nur über den verknüpften Kurs
+   aufgelöst, nicht redundant auf den Leistungsdaten-Datensatz geschrieben) - der Schlüssel passte dadurch
+   nie, unabhängig vom tatsächlichen Inhalt.
+   **Fix:** `onRunBlockungAbgleich()` (`js/wartung.js`) vergleicht jetzt primär direkt über die
+   **Kurs-ID** (`meineKursIds`-Set aus `leistungsdaten[].kursID`, unabhängig von `fachID`/`kursart` auf dem
+   Datensatz) - ein exakter Treffer gilt sofort als vorhanden. Nur wenn kein exakter Kurstreffer existiert,
+   wird zusätzlich nach einem Kurs mit gleichem Fach/gleicher Kursart gesucht, um "abweichender Kurs" (z.B.
+   "SP-GK3" laut Blockung, aber "SP-GK4" in den Leistungsdaten) zu erkennen - Fach/Kursart kommen dafür aus
+   dem bereits geladenen Kurskatalog (`kursById.idFach`/`kursById.kursartAllg`), nicht mehr aus den
+   Leistungsdaten-Feldern selbst.
+
+10. **"Blockung mit Leistungsdaten abgleichen" meldete denselben tatsächlichen Kurs teils doppelt** – einmal
+    als "abweichender Kurs" (Ersatz für eine fehlende Blockungszeile) und bei aktivierter Checkbox "beide
+    Richtungen" zusätzlich als "zusätzlich in Leistungsdaten", obwohl es sich erkennbar um ein und denselben
+    Kurs für dasselbe Fach handelte.
+    Ursache: Die Fehlerbehebung 9 oben führte die Fach-/Kursart-basierte Ersatzkurs-Suche ein, ohne sich zu
+    merken, welche tatsächlich vorhandenen Kurse dabei bereits "verbraucht" wurden - die "beide
+    Richtungen"-Prüfung sah den als Ersatz gefundenen Kurs deshalb weiterhin als "nicht in der Blockung
+    vorhanden" an.
+    **Fix:** `onRunBlockungAbgleich()` (`js/wartung.js`) merkt sich als Ersatz verwendete Kurs-IDs jetzt in
+    `alsErsatzVerwendeteKursIds` und schließt sie von der "beide Richtungen"-Prüfung aus.
+
+11. **"Blockung mit Leistungsdaten abgleichen" zeigte bei "Kurs laut Blockung" gelegentlich einen falschen,
+    aber real existierenden Kurs an** (Kürzel/Bezeichnung eines völlig anderen Faches) - **und meldete nach
+    dem Beheben so gut wie jeden zugewiesenen Kurs als Abweichung**, selbst wenn er in den Leistungsdaten
+    korrekt eingetragen war.
+    Ursache, im SVWS-Server-Quellcode nachvollzogen: Kurse innerhalb einer Blockung
+    (`DTOGostBlockungKurs`, Tabelle `Gost_Blockung_Kurse`) haben eine **eigene, unabhängig generierte
+    ID** ("ID des Kurses in der Blockung") - ohne gespeicherten Fremdschlüssel zur normalen `Kurse`-Tabelle,
+    die die Leistungsdaten referenzieren. Ein Abgleich über die Kurs-ID ist dadurch strukturell unmöglich;
+    `kursById.get(blockungsKursId)` (wie in Fehlerbehebung 9 genutzt) kann bestenfalls zufällig danebenliegen
+    - im beobachteten Fall lieferte ID 2247 einen völlig unbeteiligten, aber real existierenden Kurs eines
+    anderen Faches zurück, weil beide Tabellen unabhängig voneinander bei 1 hochzählende IDs vergeben.
+    **Fix, zweistufig (`js/wartung.js`, `js/svwsApi.js`):**
+    - Neue Funktion `SvwsApi.getGostBlockungsdaten(blockungsId)` (`GET /gost/blockungen/{blockungsId}`)
+      liefert `kurse[]` mit Kursnummer (`nummer`) und Suffix je Blockungs-Kurs. `blockungsKursLabel()`
+      zeigt daraus "Kurs-Nr. X" an - die Blockungs-Kurs-ID wird nirgends mehr gegen `kursById` aufgelöst.
+    - Der Vergleich läuft jetzt ausschließlich über Fach+Kursart; bei mehreren passenden Kursen (parallele
+      Kurse, z.B. zwei GK-Kurse desselben Fachs) versucht `parseKursnummerAusKuerzel()`, aus dem
+      *tatsächlichen* Kurs-Kürzel die Kursnummer zu erraten (endende Ziffern, z.B. "SP-GK3" → 3) und mit
+      der Blockungs-Kursnummer abzugleichen - ausdrücklich eine Heuristik (funktioniert nur, wenn Kürzel
+      auf die Kursnummer enden), keine zuverlässige Zuordnung. Nur bei genau einem passenden Kurs
+      (eindeutig) oder eindeutigem Kursnummer-Treffer gilt die Zeile als unauffällig und wird *nicht*
+      gemeldet; bleiben mehrere Kandidaten ohne eindeutigen Kursnummer-Treffer übrig, wird die Zeile mit
+      dem Hinweis "unsicher" gemeldet (bester Rateversuch als Anzeige, aber erkennbar unsicher).
+
+12. **"Blockung mit Leistungsdaten abgleichen" meldete für einzelne Schüler:innen (angezeigt nur als
+    "Schüler-ID X" statt Name) praktisch jedes Fach als "fehlt in Leistungsdaten".**
+    Ursache: Eine Blockung ist ein eingefrorener Snapshot und enthält auch längst ausgeschiedene/
+    abgemeldete Schüler:innen, die im aktuell geladenen Status-Filter (Schritt 1, standardmäßig nur
+    "Aktiv"/"Extern"/"Aufnahme") nicht mehr auftauchen (`schuelerById.get()` liefert dann `undefined`,
+    daher die reine ID statt eines Namens in der Anzeige). Für solche Personen gibt es naturgemäß keine
+    aktuellen Leistungsdaten mehr zu vergleichen - das ist kein Fehler, sondern erwartbar.
+    **Fix:** `onRunBlockungAbgleich()` (`js/wartung.js`) überspringt Schüler:innen, die nicht in
+    `schuelerById` gefunden werden, jetzt komplett (kein Leistungsdaten-Abgleich, keine Meldungen für sie)
+    und zählt sie im Abschluss-Status als "nicht im aktuell geladenen Status-Filter enthalten".
+
 ## Programmstruktur
 
 ```text
@@ -480,6 +568,10 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch; index.html Schritt 8 sowie mehrere wartung.html-Bausteine) |
 | `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (wartung.html "Leere Kurse suchen") – Stand Juli 2026 serverseitig auf den Server-Entwicklungsmodus beschränkt, siehe Hinweis dort |
 | `patchKurs(id, patch)` | `PATCH /kurse/{id}` | Ändert einzelne Felder eines Kurses (Merge-Patch nach RFC 7386, z.B. `{sortierung: 0}`) – anders als das Löschen im normalen Server-Modus nutzbar |
+| `getGostAbiturjahrgaenge(abschnittId)` | `GET /gost/abiturjahrgaenge/{abschnittId}` | Stufen (Abiturjahrgänge) der gymnasialen Oberstufe im aktuellen Abschnitt (wartung.html "Blockung mit Leistungsdaten abgleichen") |
+| `getGostBlockungen(abiturjahr, halbjahr)` | `GET /gost/abiturjahrgang/{abiturjahr}/{halbjahr}/blockungen` | Blockungen (Planungsstände) einer Stufe in einem Gost-Halbjahr (`halbjahr` hier: 0=EF.1 … 5=Q2.2 - **nicht** dasselbe wie `GostJahrgang.halbjahr`, siehe `gostHalbjahrIndex()` in js/wartung.js) |
+| `getGostBlockungsergebnis(ergebnisId)` | `GET /gost/blockungen/zwischenergebnisse/{ergebnisId}` | Konkretes Blockungsergebnis inkl. Schienen/Kurse/Schüler-Zuordnung |
+| `getGostBlockungsdaten(blockungsId)` | `GET /gost/blockungen/{blockungsId}` | Grunddaten einer Blockung inkl. `kurse[]` mit Kursnummer/Suffix - Blockungs-Kurs-IDs sind eine eigene ID-Reihe, siehe Hinweis unten |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -756,6 +848,42 @@ PLANUNG.md), passend zum bestehenden Stil des Projekts (kein Build-Schritt).
   löscht die **Kurse selbst** über `SvwsApi.deleteKurseMultiple()` (antwortet pro Kurs einzeln mit
   `{id, success, log[]}`, daher keine `batchWithBisection()` nötig) und ruft danach `refreshKursBelegung()`
   auf.
+- **"Blockung mit Leistungsdaten abgleichen"**: `GOST_KURSART_LABELS`/`gostKursartLabel(id)` bilden das
+  feste Gost-Kursart-Enum (1–5) auf die Kürzel LK/GK/ZK/PJK/VTF ab (aus dem SVWS-Server-Quellcode
+  übernommen, keine Katalog-API dafür verfügbar). `gostHalbjahrIndex(jahrgangLabel, schuljahresHalbjahr)`:
+  wichtige Umrechnung, da das `halbjahr`-Feld aus `GostJahrgang` (`/gost/abiturjahrgaenge/{idAbschnitt}`)
+  **nicht** der von `/gost/abiturjahrgang/{abiturjahr}/{halbjahr}/blockungen` erwartete GostHalbjahr-Index
+  (0=EF.1…5=Q2.2) ist, sondern schlicht "1" oder "2" (welche Hälfte des Schuljahres der Abschnitt ist,
+  dieselbe Zählung wie beim Verbindungs-Feld "Abschnitt") - `GOST_JAHRGANG_BASIS` (EF→0, Q1→2, Q2→4) plus
+  `+1` bei Schuljahres-Halbjahr 2 liefert den echten Index. Ohne diese Umrechnung landet man bei der
+  falschen (oft längst vergangenen, inaktiven) Blockung - genau das war ein realer Bug in einer früheren
+  Fassung. `populateBlockungAbgleichStufen()` lädt nach "Schild-Daten laden" die Stufen
+  (`SvwsApi.getGostAbiturjahrgaenge()`, Platzhalter `abiturjahr: -1` sowie Jahrgänge unterhalb der
+  Oberstufe herausgefiltert - nur EF/Q1/Q2 bleiben). `onBlockungAbgleichStufeChange()` lädt bei
+  Stufenwechsel die Blockungen (`SvwsApi.getGostBlockungen()`, mit dem umgerechneten Halbjahr-Index) und
+  wählt die als `istAktiv` markierte vor. `onRunBlockungAbgleich()` holt parallel das aktive Ergebnis der
+  gewählten Blockung (`SvwsApi.getGostBlockungsergebnis()`) und deren Grunddaten
+  (`SvwsApi.getGostBlockungsdaten()`, liefert `kurse[]` mit Kursnummer/Suffix -
+  `blockungsKursInfo`/`blockungsKursLabel()`), baut aus dem Ergebnis eine Map Schüler-ID →
+  `[{fachID, kursart, kursId}]` aus allen Schienen/Kursen und holt dann konkurrenzbegrenzt die
+  Lernabschnittsdaten jeder/jedes betroffenen Schülerin/Schülers. Ein Abgleich über die Kurs-ID ist
+  **strukturell unmöglich** (eigene, unabhängige ID-Reihe der Blockungs-Kurse ohne Fremdschlüssel zur
+  echten Kurse-Tabelle, siehe Fehlerbehebung 11) - verglichen wird ausschließlich über Fach+Kursart (aus
+  `kursById.idFach`/`kursById.kursartAllg` der *tatsächlich vorhandenen* Kurse, bewusst nicht über
+  `fachID`/`kursart` auf dem Leistungsdaten-Datensatz selbst, siehe Fehlerbehebung 9 - die sind bei per
+  Blockung "hochgeschriebenen" Einträgen nicht zuverlässig befüllt). Kein passender Kurs vorhanden →
+  "fehlt in Leistungsdaten". Genau ein passender Kurs → gilt als Treffer, keine Meldung. Mehrere passende
+  Kurse (parallele Kurse desselben Fachs/derselben Kursart) → `parseKursnummerAusKuerzel()` versucht, über
+  die am Kürzel-Ende geratene Kursnummer (z.B. "SP-GK3" → 3) den laut Blockungs-Kursnummer richtigen
+  eindeutig zu bestimmen; gelingt das, ebenfalls kein Meldungsgrund, sonst → "abweichender Kurs" mit
+  Hinweis "unsicher" (bester Rateversuch, erkennbar unsicher). `alsErsatzVerwendeteKursIds` verhindert,
+  dass ein bereits zugeordneter Kurs bei aktivierter Checkbox "beide Richtungen" zusätzlich als
+  "zusätzlich in Leistungsdaten" auftaucht (siehe Fehlerbehebung 10). `kursLabelOrId()`/`fachLabel()`
+  lösen *echte* Kurs-/Fach-IDs über die bereits geladenen `kursById`/`schildFaecher` auf und fallen auf
+  die reine ID zurück, falls dort nicht gefunden; `blockungsKursId`s werden dafür nie verwendet.
+  Schüler:innen, die nicht in `schuelerById` gefunden werden (nicht im aktuell geladenen Status-Filter,
+  z.B. längst ausgeschieden - siehe Fehlerbehebung 12), werden komplett übersprungen statt fälschlich
+  "fehlt überall" zu melden. Rein lesend, keine Lösch-/Änderungsfunktion.
 
 `onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
 `js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`
@@ -780,6 +908,13 @@ auch `index.html` betrifft.
   `localStorage` zwischen den beiden Dateien tatsächlich teilt - bei `file://`-URLs macht das nicht jeder
   Browser gleich (Chrome: ja, Firefox: nein, jede Datei isoliert). Über einen lokalen Webserver geöffnet
   ist das Teilen immer zuverlässig.
+- "Blockung mit Leistungsdaten abgleichen": Ein exakter Kurs-ID-Abgleich ist serverseitig unmöglich
+  (eigene, unabhängige ID-Reihe der Blockungs-Kurse ohne Fremdschlüssel zur echten Kurse-Tabelle, siehe
+  Fehlerbehebung 11) - der Vergleich läuft deshalb über Fach+Kursart, bei mehreren parallelen Kursen
+  verfeinert um eine aus dem Kurs-Kürzel geratene Kursnummer (`parseKursnummerAusKuerzel()`). Das
+  funktioniert nur, wenn Kurs-Kürzel auf die Kursnummer enden (z.B. "SP-GK3") - bei anderen
+  Kürzel-Konventionen bleibt die Zuordnung bei mehreren parallelen Kursen unsicher (wird dann auch so
+  gekennzeichnet, nicht stillschweigend geraten).
 
 ## Einen SVWS-API-Endpunkt selbst prüfen (Swagger UI, ohne curl)
 

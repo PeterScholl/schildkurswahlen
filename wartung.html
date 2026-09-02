@@ -310,6 +310,52 @@
   <button type="button" class="btn-secondary" id="btn-leere-kurse-sortierung-null" disabled>Ausgewählte mit Sortierung 0 versehen</button>
   <div id="leere-kurse-log" class="log"></div>
 
+  <h3>Blockung mit Leistungsdaten abgleichen</h3>
+  <p class="hint">
+    Vergleicht die Kurszuordnung einer Blockung der gymnasialen Oberstufe mit den tatsächlich eingetragenen
+    Leistungsdaten der Schüler:innen dieser Stufe im aktuellen Halbjahr – z.B. um manuell nachgetragene
+    Umwahlen auf Vollständigkeit zu prüfen. Verglichen wird je Schüler:in anhand von Fach und Kursart (Kurse
+    in einer Blockung haben keine eigene, mit dem normalen Kurskatalog vergleichbare ID – ein Abgleich über
+    Kurs-IDs ist serverseitig nicht möglich). Gibt es zu Fach/Kursart mehrere parallele Kurse (z.B. zwei
+    GK-Kurse), wird versucht, über die aus dem Kurs-Kürzel abgelesene Kursnummer (z.B. die "3" in "SP-GK3")
+    den richtigen eindeutig zu bestimmen – Rateversuch, kein Garant. Gemeldet wird, wenn ein laut Blockung
+    erwarteter Kurs in den Leistungsdaten ganz fehlt, oder wenn bei mehreren passenden Kursen keine
+    eindeutige Kursnummer-Zuordnung möglich war (dann mit Hinweis "unsicher" – bitte von Hand prüfen).
+  </p>
+  <div class="grid-form">
+    <label>Stufe
+      <select id="blockung-abgleich-stufe"><option value="">(wählen)</option></select>
+    </label>
+    <label>Blockung
+      <select id="blockung-abgleich-blockung" disabled><option value="">(erst Stufe wählen)</option></select>
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label>
+      <input type="checkbox" id="blockung-abgleich-beide-richtungen" />
+      Auch Kurse zeigen, die nur in den Leistungsdaten stehen, aber nicht in der Blockung vorkommen
+    </label>
+  </div>
+  <button id="btn-run-blockung-abgleich" disabled>Abgleichen</button>
+  <span id="blockung-abgleich-status" class="status-msg"></span>
+  <progress id="blockung-abgleich-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div class="table-scroll">
+    <table id="blockung-abgleich-table">
+      <thead>
+        <tr>
+          <th>Schüler</th>
+          <th>Fach</th>
+          <th>Kursart</th>
+          <th>Kurs laut Blockung</th>
+          <th>Kurs laut Leistungsdaten</th>
+          <th>Hinweis</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <datalist id="kurs-datalist-anzahl"></datalist>
   <datalist id="kursart-datalist"></datalist>
 </section>
