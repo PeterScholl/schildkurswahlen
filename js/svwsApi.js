@@ -43,21 +43,48 @@
     }
   }
 
+  /** Diagnose-Logging (Stand September 2026, siehe PLANUNG.md): hilft, ein Firefox-spezifisches Problem
+   *  einzugrenzen, bei dem manche Aufrufe mit "CORS-Anfrage schlug fehl, Statuscode: (null)" abbrechen,
+   *  obwohl alle Aufrufe hier über *dieselbe* request()-Funktion mit identischen fetch()-Optionen laufen
+   *  (auch "Verbinden"/getStammdaten() - keine Sonderbehandlung). console.debug() statt console.log(),
+   *  damit das bei normaler Nutzung nicht auffällt (in den meisten Browsern nur bei "Verbose"-Loglevel
+   *  sichtbar). Kann entfernt werden, sobald das Problem verstanden/behoben ist. */
+  function safeHeadersForLog(headers) {
+    const clone = { ...headers };
+    if (clone.Authorization) clone.Authorization = "(gesetzt, Wert nicht geloggt)";
+    return clone;
+  }
+
   async function request(method, path, body) {
     if (!isConfigured()) throw new Error("SVWS-API ist nicht konfiguriert – bitte zuerst verbinden.");
     const url = `${baseUrl}${path}`;
+    const options = {
+      method,
+      mode: "cors", // entspricht dem fetch()-Standardverhalten bei Cross-Origin-Requests - jetzt nur
+      credentials: "same-origin", // explizit gemacht, um es unten mitloggen zu können; keine Verhaltensänderung
+      headers: {
+        Authorization: authHeader,
+        Accept: "application/json",
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    };
+    console.debug(
+      "[svwsApi] Anfrage:",
+      url,
+      "method:", options.method,
+      "mode:", options.mode,
+      "credentials:", options.credentials
+    );
+
     let response;
     try {
-      response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: authHeader,
-          Accept: "application/json",
-          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
+      response = await fetch(url, options);
     } catch (networkError) {
+      console.error(
+        "[svwsApi]", url, networkError.name, networkError.message,
+        JSON.stringify({ method: options.method, mode: options.mode, credentials: options.credentials, headers: safeHeadersForLog(options.headers) })
+      );
       throw new Error(
         `Verbindung zu ${baseUrl} fehlgeschlagen. Läuft der Server? Bei selbstsigniertem Zertifikat: ` +
           `${baseUrl} einmal direkt im Browser öffnen und die Zertifikatswarnung bestätigen. (${networkError.message})`
@@ -69,6 +96,23 @@
     if (response.status === 204) return null;
     const text = await response.text();
     return text ? JSON.parse(text) : null;
+  }
+
+  /** Fängt Fehler ab, die aus irgendeinem Grund nicht in einem try/catch der aufrufenden Seite landen
+   *  (z.B. vergessenes .catch() in einer Promise-Kette) - reine Diagnose-Ergänzung, ändert an der
+   *  eigentlichen Fehlerbehandlung nichts. Wird nur einmal registriert, auch wenn svwsApi.js aus
+   *  irgendeinem Grund mehrfach eingebunden würde. */
+  if (!global.__svwsApiUnhandledRejectionLogged) {
+    global.__svwsApiUnhandledRejectionLogged = true;
+    global.addEventListener("unhandledrejection", (evt) => {
+      const err = evt.reason;
+      console.error(
+        "[svwsApi] unhandledrejection:",
+        err && err.name,
+        err && err.message,
+        err
+      );
+    });
   }
 
   /** Baut aus einer Fehlerantwort eine Meldung inkl. Server-Rückmeldung, egal ob diese JSON oder

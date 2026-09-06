@@ -28,6 +28,33 @@ statt eines echten Verbindungsproblems ist, und einen entsprechend vorsichtigere
 
 **Status: nur notiert, noch nicht untersucht/behoben.**
 
+### Firefox-spezifische fehlgeschlagene Anfragen ("CORS-Anfrage schlug fehl, Statuscode: (null)")
+
+Beobachtet (September 2026): In Firefox schlagen manche Aufrufe (z.B. `GET .../schueler/abschnitt/{id}`,
+`GET .../kurse/abschnitt/{id}`) mit "CORS-Anfrage schlug fehl, Statuscode: (null)" fehl, während andere
+(z.B. `GET .../faecher`) und der initiale Verbindungstest ("Verbinden") normal funktionieren. In Chrome
+tritt das Problem nicht auf. Vermutlich eine andere Ursache als der Eintrag oben (anderes Auslöser-Muster:
+browserabhängig statt an einen bestimmten Server-Fehlerfall gebunden), auch wenn beide sich als
+CORS-Fehler tarnen.
+
+Wichtiger Befund beim Nachschauen im Code: Es gibt in `js/svwsApi.js` nur **eine** `request()`-Funktion -
+"Verbinden" (`getStammdaten()`) und alle übrigen Aufrufe laufen über exakt denselben Code mit identischen
+`fetch()`-Optionen (`method`, `mode`, `credentials`, Header). Ein unterschiedliches Frontend-Verhalten
+zwischen "funktioniert" und "funktioniert nicht" scheidet als Ursache also aus - es muss an etwas anderem
+liegen (z.B. Antwortgröße/-dauer der betroffenen Endpunkte, serverseitige CORS-Header, die sich je
+Endpunkt unterscheiden, oder eine Firefox-Erweiterung/Tracking-Schutz-Einstellung).
+
+**Diagnose-Logging eingebaut** (`js/svwsApi.js`, `request()`): `console.debug()` vor jedem Request
+(URL/method/mode/credentials) sowie `console.error()` bei einem fehlgeschlagenen `fetch()` (inkl.
+`error.name`/`error.message`/URL/Request-Optionen, Authorization-Header nur als "gesetzt" statt im
+Klartext), plus ein globaler `unhandledrejection`-Handler als Auffangnetz. Rein diagnostisch, kann nach
+Klärung der Ursache wieder entfernt werden.
+
+**Noch offen:** Mit den neuen Logs in der Firefox-Konsole beobachten, ob sich die fehlschlagenden von den
+funktionierenden Aufrufen in Antwortgröße/-dauer unterscheiden (Firefox meldet auch echte
+Netzwerk-/Timeout-Fehler bei Cross-Origin-Requests oft irreführend als "CORS-Anfrage schlug fehl"), sowie
+testen, ob das Problem auch in einem frischen Firefox-Profil ohne Erweiterungen/im privaten Modus auftritt.
+
 ## Erledigt
 
 ### 1. "Leere Kurse suchen": Fach-/Kursart-Filter im Spaltenkopf
