@@ -28,36 +28,34 @@ statt eines echten Verbindungsproblems ist, und einen entsprechend vorsichtigere
 
 **Status: nur notiert, noch nicht untersucht/behoben.**
 
-### Firefox-spezifische fehlgeschlagene Anfragen ("CORS-Anfrage schlug fehl, Statuscode: (null)")
-
-Beobachtet (September 2026): In Firefox schlagen manche Aufrufe (z.B. `GET .../schueler/abschnitt/{id}`,
-`GET .../kurse/abschnitt/{id}`) mit "CORS-Anfrage schlug fehl, Statuscode: (null)" fehl, während andere
-(z.B. `GET .../faecher`) und der initiale Verbindungstest ("Verbinden") normal funktionieren. In Chrome
-tritt das Problem nicht auf. Vermutlich eine andere Ursache als der Eintrag oben (anderes Auslöser-Muster:
-browserabhängig statt an einen bestimmten Server-Fehlerfall gebunden), auch wenn beide sich als
-CORS-Fehler tarnen.
-
-Wichtiger Befund beim Nachschauen im Code: Es gibt in `js/svwsApi.js` nur **eine** `request()`-Funktion -
-"Verbinden" (`getStammdaten()`) und alle übrigen Aufrufe laufen über exakt denselben Code mit identischen
-`fetch()`-Optionen (`method`, `mode`, `credentials`, Header). Ein unterschiedliches Frontend-Verhalten
-zwischen "funktioniert" und "funktioniert nicht" scheidet als Ursache also aus - es muss an etwas anderem
-liegen (z.B. Antwortgröße/-dauer der betroffenen Endpunkte, serverseitige CORS-Header, die sich je
-Endpunkt unterscheiden, oder eine Firefox-Erweiterung/Tracking-Schutz-Einstellung).
-
-**Diagnose-Logging eingebaut** (`js/svwsApi.js`, `request()`): `console.debug()` vor jedem Request
-(URL/method/mode/credentials) sowie `console.error()` bei einem fehlgeschlagenen `fetch()` (inkl.
-`error.name`/`error.message`/URL/Request-Optionen, Authorization-Header nur als "gesetzt" statt im
-Klartext), plus ein globaler `unhandledrejection`-Handler als Auffangnetz. Rein diagnostisch, kann nach
-Klärung der Ursache wieder entfernt werden.
-
-**Noch offen:** Mit den neuen Logs in der Firefox-Konsole beobachten, ob sich die fehlschlagenden von den
-funktionierenden Aufrufen in Antwortgröße/-dauer unterscheiden (Firefox meldet auch echte
-Netzwerk-/Timeout-Fehler bei Cross-Origin-Requests oft irreführend als "CORS-Anfrage schlug fehl"), sowie
-testen, ob das Problem auch in einem frischen Firefox-Profil ohne Erweiterungen/im privaten Modus auftritt.
-
 ## Erledigt
 
-### 1. "Leere Kurse suchen": Fach-/Kursart-Filter im Spaltenkopf
+### 1. Firefox-spezifische fehlgeschlagene Anfragen ("CORS-Anfrage schlug fehl, Statuscode: (null)")
+
+Beobachtet und gelöst (September 2026): In Firefox schlugen manche Aufrufe mit "CORS-Anfrage schlug fehl,
+Statuscode: (null)" fehl, während andere (z.B. `GET .../faecher`) und der Verbindungstest normal
+funktionierten - in Chrome trat das nicht auf. Ursache: Firefox' neueres "Local Network Access" (LNA)
+blockiert standardmäßig den Zugriff auf Adressen im lokalen/privaten Netzwerk, sofern die Seite keine
+Ausnahme dafür hat. Nutzer-seitiger Fix: `about:config` → `network.lna.skip-domains` → Server-Domain
+eintragen, Seite neu laden - reine Browser-Einstellung, keine Code-Änderung nötig, um das Grundproblem zu
+lösen.
+
+Zwei Ergänzungen im Tool selbst:
+- **Diagnose-Logging** (`js/svwsApi.js`, `request()`): `console.debug()` vor jedem Request
+  (URL/method/mode/credentials) sowie `console.error()` bei fehlgeschlagenem `fetch()`
+  (`error.name`/`error.message`/Request-Optionen, Authorization-Header nur als "gesetzt" geloggt), plus
+  ein globaler `unhandledrejection`-Handler. Hinter einem Debug-Flag (`debugLogging`, standardmäßig
+  `false`) - einschalten über `SvwsApi.setDebugLogging(true)` in der Browser-Konsole.
+- **In-App-Hinweis:** Da sich ein LNA-Block browserseitig aus Sicherheitsgründen nicht zuverlässig von
+  "Server generell nicht erreichbar" unterscheiden lässt (beides derselbe generische `TypeError`), zeigt
+  bei jedem Netzwerkfehler (markiert über `err.isNetworkError`/`SvwsApi.isNetworkError()`) ein
+  aufklappbarer Hinweis (`<details>`, `networkErrorHintHtml()` in `js/app.js`/`js/wartung.js`, jeweils
+  direkt hinter der `.status-msg`-Zeile) beide möglichen Ursachen inkl. LNA-Lösungsschritten an, ohne eine
+  davon zu behaupten. Aktuell verdrahtet bei "Verbinden" und "Schild-Daten laden" auf beiden Seiten (die
+  naheliegendsten Erstkontakt-Stellen) - für weitere Stellen reicht es, `err` als 4. Argument an
+  `setStatus()` zu übergeben.
+
+### 2. "Leere Kurse suchen": Fach-/Kursart-Filter im Spaltenkopf
 
 Umgesetzt (September 2026): Statt der Checkbox-Blöcke oberhalb der Tabelle gibt es jetzt in den
 Spaltenköpfen "Fach" und "Kursart" der Ergebnistabelle (`wartung.html`) je eine ▾-Schaltfläche, die ein
@@ -65,7 +63,7 @@ Popover mit Checkboxen der tatsächlich gefundenen Werte öffnet – Auswahl wir
 (kein erneutes "Prüfen" nötig) und wird gespeichert. "Prüfen" selbst läuft jetzt ohne Vorbedingung über
 alle Kurse mit 0 Schüler:innen.
 
-### 2. Eigenes Wartungs-Tool `wartung.html`
+### 3. Eigenes Wartungs-Tool `wartung.html`
 
 Umgesetzt (September 2026): Die reinen Schild-Wartungswerkzeuge (Leistungsdaten mit leerem Kurs, Split in
 Jahrgangs-/Klassenkurse, Leere Kurse suchen) wurden aus `index.html`/`js/app.js` in ein eigenständiges
@@ -79,9 +77,11 @@ braucht, die nicht dauerhaft gespeichert werden.
 Code-Duplikation zwischen `app.js` und `wartung.js` (Verbindungsaufbau, Schild-Daten laden, "Neuen Kurs
 anlegen"-Dialog) ist bewusst in Kauf genommen statt in ein gemeinsames Modul ausgelagert – passend zum
 bestehenden Stil des Projekts (kein Build-Schritt, reines Duplizieren paralleler Funktionsblöcke wie schon
-bei Jahrgangs-/Klassen-Split).
+bei Jahrgangs-/Klassen-Split). **Nachtrag:** Die wirklich zustandslosen Hilfsfunktionen darunter wurden
+später doch ausgelagert, siehe Punkt 5 unten - die obige Begründung gilt seitdem nur noch für die
+Funktionen, die tatsächlich Datei-lokalen Zustand brauchen.
 
-### 3. Neuer Bereich "Blockung mit Leistungsdaten abgleichen" (wartung.html)
+### 4. Neuer Bereich "Blockung mit Leistungsdaten abgleichen" (wartung.html)
 
 Umgesetzt (September 2026): Vergleicht die Kurszuordnung einer Blockung der gymnasialen Oberstufe mit den
 tatsächlich eingetragenen Leistungsdaten einer Stufe, um manuell nachgetragene Umwahlen auf Vollständigkeit
@@ -103,3 +103,24 @@ Nr. 8–12):
 - Die Blockung ist ein eingefrorener Snapshot und enthält auch längst ausgeschiedene Schüler:innen, die im
   aktuellen Status-Filter nicht mehr auftauchen – die werden jetzt übersprungen statt fälschlich "fehlt
   überall" zu melden.
+
+### 5. Neues `js/sharedCode.js` für echte Code-Duplikate zwischen app.js und wartung.js
+
+Umgesetzt (September 2026), auf Nachfrage: `js/app.js` und `js/wartung.js` hatten rund 19 gleichnamige
+Funktionen - beim genauen Durchsehen stellte sich heraus, dass nur ein Teil davon *wirklich* identisch
+war (rein aus den Parametern berechnet, ohne versteckte Abhängigkeit von Datei-lokalem Zustand). Genau
+dieser Teil (`$`, `reveal`, `escapeHtml`, `idFromLabel`, `kursLabel`, `schuelerLabel`,
+`mapWithConcurrency`, `batchWithBisection`, `DEFAULT_JAHRGANG_KUERZEL`, `networkErrorHintHtml`,
+`setStatus`) wurde nach `js/sharedCode.js` verschoben (als `window.SharedCode` exportiert, per
+`<script>`-Tag von beiden Seiten eingebunden wie schon `svwsApi.js`/`storage.js` - kein Build-Schritt
+nötig, da beide Module ohnehin schon so eingebunden werden). `app.js`/`wartung.js` holen sich die
+Funktionen einmalig per Destructuring (`const { $, ... } = SharedCode;`), sodass der Rest jeder Datei
+unverändert bleibt. `schuelerLabel()` bekam dafür einen zusätzlichen Parameter (die Klassen-Map statt
+Zugriff über Closure) - beide Seiten legen sich einen kleinen 1-Zeilen-Wrapper an, damit bestehende
+Aufrufe unverändert funktionieren.
+
+Bewusst **nicht** verschoben: alles, was echten Datei-lokalen Laufzeit-Zustand braucht (Verbindungsaufbau,
+"Neuen Kurs anlegen"-Dialog, Speichern/Laden, `onLoadSchildData()`/`refreshKursBelegung()` - Letztere
+unterscheiden sich auch inhaltlich zwischen den Seiten). Eine Auslagerung davon würde entweder viele
+Parameter durchreichen oder eine größere Umbau-Aktion (gemeinsam verwalteter Zustand) erfordern - siehe
+aktualisierten Punkt 3 oben.

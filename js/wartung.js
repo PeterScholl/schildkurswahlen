@@ -43,87 +43,28 @@
   let autosplitKlasseQuellkursId = null;
 
   // ---------- Hilfsfunktionen ----------
-
-  function $(id) { return document.getElementById(id); }
-
-  function setStatus(el, text, kind) {
-    el.textContent = text;
-    el.className = "status-msg" + (kind ? " " + kind : "");
-  }
-
-  function reveal(id) { $(id).classList.remove("hidden"); }
+  // Rein zustandslose Utilities kommen aus js/sharedCode.js (identisch von js/app.js genutzt, siehe
+  // dortiger Kopfkommentar) - hier nur als lokale Bindings, damit der Rest der Datei unverändert
+  // `$(...)`, `escapeHtml(...)` usw. aufrufen kann.
+  const { $, reveal, escapeHtml, idFromLabel, kursLabel, mapWithConcurrency, batchWithBisection, DEFAULT_JAHRGANG_KUERZEL, setStatus } =
+    SharedCode;
 
   function persist() { Storage.scheduleSave(state); }
 
-  function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-
+  /** Wrapper um SharedCode.schuelerLabel(): reicht das hier lokal geladene schuelerIdToKlasse mit durch
+   *  (jede Seite pflegt ihre eigene, unabhängig geladene Map), damit bestehende Aufrufe `schuelerLabel(s)`
+   *  unverändert funktionieren. */
   function schuelerLabel(s) {
-    const jahrgang = s.jahrgang || "";
-    const klasse = schuelerIdToKlasse.get(s.id) || "";
-    let suffix = "";
-    if (jahrgang && klasse) suffix = ` (${jahrgang}-${klasse})`;
-    else if (jahrgang || klasse) suffix = ` (${jahrgang || klasse})`;
-    return `${s.nachname}, ${s.vorname}${suffix} [${s.id}]`;
-  }
-
-  function kursLabel(k) {
-    const zeugnis = k.bezeichnungZeugnis ? ` – ${k.bezeichnungZeugnis}` : "";
-    return `${k.kuerzel}${zeugnis} [${k.id}]`;
+    return SharedCode.schuelerLabel(s, schuelerIdToKlasse);
   }
 
   /** Wie kursLabel(), aber mit Schülerzahl in Klammern - die Zahl kommt aus dem eingebetteten
-   *  `schueler[]`-Array der zuletzt geladenen Kursdaten. */
+   *  `schueler[]`-Array der zuletzt geladenen Kursdaten. Nur hier gebraucht (Split-Tabellen), daher nicht
+   *  in sharedCode.js. */
   function kursLabelMitAnzahl(k) {
     const zeugnis = k.bezeichnungZeugnis ? ` – ${k.bezeichnungZeugnis}` : "";
     const anzahl = (k.schueler || []).length;
     return `${k.kuerzel}${zeugnis} (${anzahl}) [${k.id}]`;
-  }
-
-  /** Extrahiert die in eckigen Klammern kodierte ID aus einem Datalist-Label. */
-  function idFromLabel(label) {
-    const m = /\[(\d+)\]\s*$/.exec(label || "");
-    return m ? Number(m[1]) : null;
-  }
-
-  async function mapWithConcurrency(items, limit, worker) {
-    const results = new Array(items.length);
-    let cursor = 0;
-    async function run() {
-      while (cursor < items.length) {
-        const idx = cursor++;
-        results[idx] = await worker(items[idx], idx);
-      }
-    }
-    const runners = Array.from({ length: Math.min(limit, items.length) }, run);
-    await Promise.all(runners);
-    return results;
-  }
-
-  /**
-   * Führt `apiCall(items)` aus (typischerweise ein Batch-Create/-Delete). Der SVWS-Server beantwortet
-   * einen Batch offenbar transaktional: Enthält er auch nur einen ungültigen Datensatz, schlägt der
-   * GESAMTE Batch mit 500 fehl - auch die unproblematischen Einträge. Um das nicht auf Kosten gültiger
-   * Einträge gehen zu lassen, wird ein fehlgeschlagener Batch bei einem Fehler rekursiv halbiert, bis
-   * entweder ein Teil-Batch durchgeht oder der/die einzelne(n) problematische(n) Einträge isoliert sind.
-   * Identisch zur gleichnamigen Funktion in app.js (index.html) - bewusst dupliziert statt geteilt, siehe
-   * Kommentar am Dateianfang.
-   */
-  async function batchWithBisection(items, apiCall) {
-    if (items.length === 0) return { ok: 0, failed: [] };
-    try {
-      await apiCall(items);
-      return { ok: items.length, failed: [] };
-    } catch (err) {
-      if (items.length === 1) {
-        return { ok: 0, failed: [{ item: items[0], message: err.message }] };
-      }
-      const mid = Math.ceil(items.length / 2);
-      const left = await batchWithBisection(items.slice(0, mid), apiCall);
-      const right = await batchWithBisection(items.slice(mid), apiCall);
-      return { ok: left.ok + right.ok, failed: [...left.failed, ...right.failed] };
-    }
   }
 
   // ---------- 1. Verbindung ----------
@@ -169,7 +110,7 @@
       reveal("status-katalog-wrapper");
       reveal("section-schild-data");
     } catch (err) {
-      setStatus($("connect-status"), err.message, "error");
+      setStatus($("connect-status"), err.message, "error", err);
     }
   }
 
@@ -262,7 +203,7 @@
       renderSplitKlasseTable();
       populateBlockungAbgleichStufen();
     } catch (err) {
-      setStatus(statusEl, err.message, "error");
+      setStatus(statusEl, err.message, "error", err);
     }
   }
 
@@ -285,9 +226,7 @@
       .join("");
   }
 
-  /** Jahrgänge, die bei "Neuen Kurs anlegen" standardmäßig vorausgewählt werden (sofern in Schild
-   *  vorhanden) - deckt Sek I und Oberstufe gleichermaßen ab. */
-  const DEFAULT_JAHRGANG_KUERZEL = new Set(["05", "06", "07", "08", "09", "10", "EF", "Q1", "Q2"]);
+  // DEFAULT_JAHRGANG_KUERZEL kommt aus SharedCode (siehe oben) - deckt Sek I und Oberstufe gleichermaßen ab.
 
   /** Baut die Jahrgangs-Checkboxen im "Neuen Kurs anlegen"-Dialog neu auf. Wird bei jedem Öffnen des
    *  Dialogs aufgerufen, damit eine vorherige manuelle Auswahl nicht hängen bleibt.

@@ -10,6 +10,15 @@
   let authHeader = "";
   let username = "";
 
+  /** Debug-Flag fürs Request-Logging (siehe request() unten) - Stand September 2026 standardmäßig AUS,
+   *  nachdem das ursprüngliche Firefox-Problem geklärt ist (siehe PLANUNG.md). Bei Bedarf in der
+   *  Browser-Konsole wieder einschalten: `SvwsApi.setDebugLogging(true)` (persistiert nicht, gilt nur bis
+   *  zum nächsten Neuladen der Seite). */
+  let debugLogging = false;
+  function setDebugLogging(enabled) {
+    debugLogging = !!enabled;
+  }
+
   function configure({ host, schema, username: user, password }) {
     const cleanHost = String(host || "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
     baseUrl = `https://${cleanHost}/db/${encodeURIComponent(schema)}`;
@@ -29,6 +38,13 @@
     return baseUrl;
   }
 
+  /** true, wenn `err` aus dem generischen fetch()-Fehlschlag in request() stammt (Server nicht
+   *  erreichbar/blockiert, siehe dortiger Kommentar) - für die UI, um optional einen Hinweis mit
+   *  möglichen Ursachen anzuzeigen. */
+  function isNetworkError(err) {
+    return !!(err && err.isNetworkError);
+  }
+
   function friendlyError(status, url) {
     switch (status) {
       case 401:
@@ -43,12 +59,11 @@
     }
   }
 
-  /** Diagnose-Logging (Stand September 2026, siehe PLANUNG.md): hilft, ein Firefox-spezifisches Problem
-   *  einzugrenzen, bei dem manche Aufrufe mit "CORS-Anfrage schlug fehl, Statuscode: (null)" abbrechen,
-   *  obwohl alle Aufrufe hier über *dieselbe* request()-Funktion mit identischen fetch()-Optionen laufen
-   *  (auch "Verbinden"/getStammdaten() - keine Sonderbehandlung). console.debug() statt console.log(),
-   *  damit das bei normaler Nutzung nicht auffällt (in den meisten Browsern nur bei "Verbose"-Loglevel
-   *  sichtbar). Kann entfernt werden, sobald das Problem verstanden/behoben ist. */
+  /** Diagnose-Logging (Stand September 2026, siehe PLANUNG.md), half beim Eingrenzen eines
+   *  Firefox-spezifischen Verbindungsproblems (Local Network Access, siehe request() unten) - alle
+   *  Aufrufe hier laufen über *dieselbe* request()-Funktion mit identischen fetch()-Optionen (auch
+   *  "Verbinden"/getStammdaten() - keine Sonderbehandlung). Standardmäßig aus (`debugLogging = false`
+   *  oben); bei Bedarf über `SvwsApi.setDebugLogging(true)` in der Browser-Konsole wieder einschalten. */
   function safeHeadersForLog(headers) {
     const clone = { ...headers };
     if (clone.Authorization) clone.Authorization = "(gesetzt, Wert nicht geloggt)";
@@ -69,26 +84,38 @@
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     };
-    console.debug(
-      "[svwsApi] Anfrage:",
-      url,
-      "method:", options.method,
-      "mode:", options.mode,
-      "credentials:", options.credentials
-    );
+    if (debugLogging) {
+      console.debug(
+        "[svwsApi] Anfrage:",
+        url,
+        "method:", options.method,
+        "mode:", options.mode,
+        "credentials:", options.credentials
+      );
+    }
 
     let response;
     try {
       response = await fetch(url, options);
     } catch (networkError) {
-      console.error(
-        "[svwsApi]", url, networkError.name, networkError.message,
-        JSON.stringify({ method: options.method, mode: options.mode, credentials: options.credentials, headers: safeHeadersForLog(options.headers) })
-      );
-      throw new Error(
+      if (debugLogging) {
+        console.error(
+          "[svwsApi]", url, networkError.name, networkError.message,
+          JSON.stringify({ method: options.method, mode: options.mode, credentials: options.credentials, headers: safeHeadersForLog(options.headers) })
+        );
+      }
+      // Jeder fetch()-Abbruch vor Erhalt einer Antwort (Server nicht erreichbar, Zertifikatsproblem,
+      // vom Browser blockiert z.B. durch CORS oder Firefox' "Local Network Access", ...) landet hier -
+      // der Browser unterscheidet das aus Sicherheitsgründen nicht im Detail (nur generischer
+      // TypeError). `isNetworkError` markiert diese ganze Klasse für die UI (siehe isNetworkError()
+      // unten), die daraufhin einen Hinweis mit möglichen Ursachen anzeigen kann - ohne zu behaupten,
+      // welche davon tatsächlich zutrifft.
+      const fehler = new Error(
         `Verbindung zu ${baseUrl} fehlgeschlagen. Läuft der Server? Bei selbstsigniertem Zertifikat: ` +
           `${baseUrl} einmal direkt im Browser öffnen und die Zertifikatswarnung bestätigen. (${networkError.message})`
       );
+      fehler.isNetworkError = true;
+      throw fehler;
     }
     if (!response.ok) {
       throw new Error(await buildErrorMessage(response, url));
@@ -248,6 +275,8 @@
   global.SvwsApi = {
     configure,
     isConfigured,
+    isNetworkError,
+    setDebugLogging,
     getUsername,
     getBaseUrl,
     getStammdaten,

@@ -138,6 +138,28 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
 .status-msg.warn { color: var(--warn); }
 .status-msg.error { color: var(--error); }
 
+/* Aufklappbarer Hinweis bei Netzwerkfehlern (Server nicht erreichbar), direkt hinter der jeweiligen
+   .status-msg eingefügt - siehe setStatus()/networkErrorHintHtml() in js/app.js bzw. js/wartung.js. */
+.network-error-hint {
+  margin: 0.4rem 0 0.4rem 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.85rem;
+  max-width: 34rem;
+}
+.network-error-hint summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.network-error-hint p, .network-error-hint ol { margin: 0.5rem 0 0; }
+.network-error-hint ol { padding-left: 1.25rem; }
+.network-error-hint code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
 .counts { margin-top: 0.5rem; font-size: 0.9rem; color: var(--muted); }
 
 .checkbox-row {

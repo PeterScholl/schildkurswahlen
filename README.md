@@ -538,6 +538,7 @@ SchildKurswahlen/
   css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung), von beiden Seiten genutzt
   js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing, nur index.html)
   js/svwsApi.js                SVWS-REST-Client, von beiden Seiten genutzt
+  js/sharedCode.js              Zustandslose Utility-Funktionen, von beiden Seiten genutzt (s.u.)
   js/formsImport.js            xlsx-Einlesen, Spalten-Heuristik, Kurswahl-Extraktion (nur index.html)
   js/matching.js                Fuzzy-Matching + Verwaltung der persistenten Matching-Tabellen (nur index.html)
   js/storage.js                localStorage-Autosave + JSON-Export/Import (ohne Zugangsdaten), von beiden Seiten genutzt
@@ -547,6 +548,30 @@ SchildKurswahlen/
   testdaten/                  Beispiel-Forms-Export zum Testen
 ```
 
+### `js/sharedCode.js`
+
+Enthält die Funktionen, die `js/app.js` und `js/wartung.js` früher jeweils als identisches Copy-Paste
+selbst mitführten - ausgelagert, nachdem sich zeigte, dass es sich lohnt (September 2026). Bewusst
+**nur** Funktionen, die ausschließlich von ihren Parametern abhängen (keine geschlossene Referenz auf
+Datei-lokalen Zustand wie `state`, `schildKurse`, `kursById`): `$(id)`, `reveal(id)`, `escapeHtml(str)`,
+`idFromLabel(label)`, `kursLabel(k)`, `schuelerLabel(s, schuelerIdToKlasse)` (Klassen-Map als Parameter
+statt Closure, da beide Seiten ihre eigene unabhängig geladene Map pflegen - `app.js`/`wartung.js` legen
+sich dafür einen kleinen 1-Parameter-Wrapper an, damit bestehende Aufrufe `schuelerLabel(s)`
+unverändert bleiben), `mapWithConcurrency()`, `batchWithBisection()`, `DEFAULT_JAHRGANG_KUERZEL`,
+`networkErrorHintHtml()`/`setStatus()` (Netzwerkfehler-Hinweis, siehe Fehlerbehebung weiter unten). Als
+`window.SharedCode` exportiert; `app.js`/`wartung.js` holen sich die benötigten Funktionen einmal am
+Dateianfang per Destructuring (`const { $, reveal, ... } = SharedCode;`), der Rest der Datei ruft sie
+unverändert wie zuvor auf.
+
+**Bewusst weiterhin dupliziert** (nicht hier ausgelagert), weil diese Funktionen Datei-lokalen
+Laufzeit-Zustand per Closure brauchen (`state`, `schildFaecher`, `schildKursarten`, `schildJahrgaenge`,
+`createKursOnCreated`, …) - eine Auslagerung würde entweder viele Parameter durchreichen oder eine
+größere Umbau-Aktion (gemeinsam verwalteter Zustand) erfordern, für die aktuelle Projektgröße nicht im
+Verhältnis zum Nutzen: Verbindungsaufbau (`onConnect()`, `populateConnectionFields()`,
+`renderStatusKatalog()`), "Neuen Kurs anlegen"-Dialog, Speichern/Laden (`onExportJson()` etc.),
+`onLoadSchildData()`/`refreshKursBelegung()` (unterscheiden sich zudem inhaltlich zwischen den Seiten -
+`wartung.js` aktualisiert z.B. zusätzlich die Split-Tabellen).
+
 ### `js/svwsApi.js`
 
 Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichtigste Funktionen:
@@ -554,6 +579,8 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | Funktion | Endpunkt | Zweck |
 | --- | --- | --- |
 | `configure({host, schema, username, password})` | – | Baut Basic-Auth-Header, merkt sich Basis-URL |
+| `isNetworkError(err)` | – | true, wenn `err` aus einem generischen `fetch()`-Fehlschlag stammt (Server nicht erreichbar/blockiert) - für die UI, um optional einen Hinweis mit möglichen Ursachen anzuzeigen (siehe `networkErrorHintHtml()` in `js/sharedCode.js`) |
+| `setDebugLogging(enabled)` | – | Schaltet das Request-Logging in `request()` ein/aus (`console.debug`/`console.error`, standardmäßig aus) - Diagnosehilfe, siehe PLANUNG.md |
 | `getStammdaten()` / `getAbschnittId(jahr, abschnitt)` | `GET /schule/stammdaten` | Ermittelt die Abschnitts-ID |
 | `getStatusKatalog()` | `GET /schule/schueler/status` | Katalog der Schüler-Status |
 | `getSchuelerListe(abschnittId)` | `GET /schueler/abschnitt/{id}` | Schülerliste des Abschnitts |
@@ -646,7 +673,9 @@ mit den obigen Modulen. Der persistente Teil des Zustands (`state`) wird bei jed
 über `Storage.scheduleSave(state)` gesichert. Die reinen Schild-Wartungswerkzeuge (Split, Leere Kurse,
 Leistungsdaten mit leerem Kurs) sitzen **nicht** hier, sondern eigenständig in `js/wartung.js` (siehe
 dort) – einzige Ausnahme ist "Kurse ohne Forms-Wahl" (Schritt 8) unten, die die hier laufenden Forms-Daten
-braucht.
+braucht. Die zustandslosen Hilfsfunktionen (`$`, `escapeHtml`, `mapWithConcurrency`, `batchWithBisection`,
+`kursLabel`, `schuelerLabel`, `idFromLabel`, `reveal`, `DEFAULT_JAHRGANG_KUERZEL`, `setStatus`) kommen aus
+`js/sharedCode.js` (siehe dort) - hier nur per Destructuring als lokale Bindings geholt.
 
 `pruneStaleKursMatches()`: läuft am Ende von `onLoadSchildData()` (Schritt 2), nachdem `kursById` aus den
 frisch geladenen Schild-Kursen aufgebaut wurde. Entfernt aus `state.kursMatching` alle nicht-ignorierten
@@ -709,13 +738,13 @@ Funktionen rund um Schritt 6 (Übertragung), siehe auch "Fehlerbehebungen währe
   Schritt 8 unten) auch, ob ein vorhandener Eintrag über einen zwischenzeitlichen, auf der Wartungsseite
   konfigurierten Split auf diesen Kurs zurückführt (`existingViaSplit`) - siehe "Fehlerbehebungen" Nr. 7
   oben.
-- `batchWithBisection(items, apiCall)`: legt einen Batch an; schlägt er fehl, wird rekursiv halbiert, bis
-  entweder ein Teil-Batch durchgeht oder die einzelnen fehlerhaften Datensätze isoliert sind, statt einen
-  ganzen Batch zu verwerfen (siehe Fehlerbehebung Nr. 2 oben, wo die Funktion ursprünglich unter dem Namen
-  `createBatchWithBisection()` speziell für Leistungsdaten entstand, bevor sie generalisiert wurde).
-  `items` müssen keine fertigen Payloads sein; `apiCall` entscheidet, was daraus gesendet wird,
-  `failed[].item` bleibt die Original-Referenz. Wird von `onExecuteTransfer()` und
-  `deleteKurseOhneWahlIds()` genutzt; `js/wartung.js` hat dieselbe Funktion als eigene Kopie.
+- `batchWithBisection(items, apiCall)` (aus `js/sharedCode.js`, siehe dort): legt einen Batch an; schlägt
+  er fehl, wird rekursiv halbiert, bis entweder ein Teil-Batch durchgeht oder die einzelnen fehlerhaften
+  Datensätze isoliert sind, statt einen ganzen Batch zu verwerfen (siehe Fehlerbehebung Nr. 2 oben, wo die
+  Funktion ursprünglich unter dem Namen `createBatchWithBisection()` speziell für Leistungsdaten entstand,
+  bevor sie generalisiert und später nach `sharedCode.js` verschoben wurde). `items` müssen keine
+  fertigen Payloads sein; `apiCall` entscheidet, was daraus gesendet wird, `failed[].item` bleibt die
+  Original-Referenz. Wird von `onExecuteTransfer()` und `deleteKurseOhneWahlIds()` genutzt.
 
 Statusfilter in Schritt 4/5:
 
@@ -765,10 +794,11 @@ Funktionen rund um Schritt 8 ("Kurse ohne Forms-Wahl", einzige Wartungs-Kontroll
 
 Orchestrierung für `wartung.html`, strukturell an `js/app.js` angelehnt, aber ein eigenständiges,
 paralleles Skript: eigene `state`-Instanz (`Storage.loadState()`), eigene Kopien von Verbindung/
-Schild-Daten-laden/"Neuen Kurs anlegen"-Dialog/Hilfsfunktionen (`$`, `escapeHtml`,
-`mapWithConcurrency`, `batchWithBisection`, `kursLabel`, `schuelerLabel`, `idFromLabel`) - bewusst
-dupliziert statt in ein gemeinsames Modul mit `js/app.js` ausgelagert (siehe Datei-Kopfkommentar sowie
-PLANUNG.md), passend zum bestehenden Stil des Projekts (kein Build-Schritt).
+Schild-Daten-laden/"Neuen Kurs anlegen"-Dialog. Die reinen, zustandslosen Hilfsfunktionen (`$`,
+`escapeHtml`, `mapWithConcurrency`, `batchWithBisection`, `kursLabel`, `schuelerLabel`, `idFromLabel`, …)
+kommen dagegen aus `js/sharedCode.js` (siehe dort) - nur der Rest bleibt bewusst dupliziert statt in ein
+gemeinsames Modul mit `js/app.js` ausgelagert (siehe Datei-Kopfkommentar sowie PLANUNG.md), da er
+Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekts (kein Build-Schritt).
 
 - `kursLabelMitAnzahl(k)`: wie `kursLabel()`, aber mit Schülerzahl in Klammern (z.B. "AGGT-Robotik (23)"),
   aus dem eingebetteten `schueler[]`-Array der zuletzt geladenen Kursdaten - Basis für die
