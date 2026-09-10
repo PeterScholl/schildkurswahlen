@@ -104,6 +104,15 @@ Nr. 8–12):
   aktuellen Status-Filter nicht mehr auftauchen – die werden jetzt übersprungen statt fälschlich "fehlt
   überall" zu melden.
 
+**Nachtrag (September 2026):** Auf Hinweis, dass eine Umwahl innerhalb desselben Fachs/derselben Kursart
+(z.B. Sp-GK1 laut Blockung, aber tatsächlich Sp-GK2) unbemerkt blieb – der bis dahin einzige Kandidat je
+Fach/Kursart wurde ungeprüft als Treffer gewertet, Kursnummer-Abgleich lief nur bei *mehreren* Kandidaten.
+Neue Checkbox "Auch Kursbezeichnung (Kursnummer) und Lehrer:in … vergleichen" (Default: an) lässt diesen
+Detail-Vergleich jetzt auch im (häufigsten) Ein-Kandidat-Fall laufen; zusätzlich wird, falls ladbar, der
+Lehrer-Katalog (`SvwsApi.getLehrer()`, neu) für einen Lehrer-Kürzel-Abgleich herangezogen (Blockung liefert
+Lehrer-Namen direkt mit, echte Kurse nur IDs). Beide Signale lösen nur bei tatsächlicher Abweichung einen
+Hinweis aus, nie bei fehlender Bestimmbarkeit (kein Kürzel-Suffix bzw. kein ladbarer Katalog).
+
 ### 5. Neues `js/sharedCode.js` für echte Code-Duplikate zwischen app.js und wartung.js
 
 Umgesetzt (September 2026), auf Nachfrage: `js/app.js` und `js/wartung.js` hatten rund 19 gleichnamige

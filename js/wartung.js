@@ -31,6 +31,9 @@
   let schuelerById = new Map();
   let kursById = new Map();
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
+  // Lehrer-Katalog (ID -> Kürzel) - nur für "Blockung mit Leistungsdaten abgleichen" gebraucht (Vergleich
+  // Kursbezeichnung/Lehrer), deshalb erst bei Bedarf dort geladen statt schon in onLoadSchildData(), s.u.
+  let lehrerById = new Map();
   let createKursOnCreated = null; // Callback(neuerKurs), der nach erfolgreichem Anlegen im Dialog aufgerufen wird
 
   // "Automatischer Vorschlag" für "Split in Jahrgangskurse" - Wegwerf-Zwischenergebnis, bewusst nicht
@@ -1892,6 +1895,21 @@
       return;
     }
 
+    // Bei aktiviertem Detail-Vergleich (Kursnummer/Lehrer statt nur Fach+Kursart) wird zusätzlich der
+    // Lehrer-Katalog gebraucht, um die Lehrer-IDs echter Kurse (KursDaten.lehrer/weitereLehrer) mit den
+    // in der Blockung hinterlegten Namen/Kürzeln (GostBlockungKursLehrer) vergleichbar zu machen - einmalig
+    // geladen und danach wiederverwendet (der Katalog ist nicht abschnittsabhängig).
+    const detailsPruefen = $("blockung-abgleich-details").checked;
+    if (detailsPruefen && lehrerById.size === 0) {
+      try {
+        const lehrerListe = await SvwsApi.getLehrer();
+        lehrerById = new Map(lehrerListe.map((l) => [l.id, l]));
+      } catch {
+        // Lehrer-Katalog ist nur ein zusätzliches Vergleichssignal - falls er nicht geladen werden kann,
+        // läuft der Kursnummer-Vergleich trotzdem weiter, nur ohne Lehrer-Abgleich.
+      }
+    }
+
     // Kursnummer/Suffix je Blockungs-Kurs (nur für die Anzeige, z.B. "GK 3") - kommt aus den
     // Blockungsdaten, nicht aus dem Ergebnis. WICHTIG: Blockungs-Kurs-IDs (Gost_Blockung_Kurse.ID) sind
     // eine eigene, von der normalen Kurse-Tabelle unabhängige ID-Reihe (siehe Fehlerbehebung in
@@ -1996,19 +2014,21 @@
             continue;
           }
 
-          // Genau ein Kandidat: eindeutig (einziger Kurs dieses Fachs/dieser Kursart), gilt als
-          // Treffer - keine Meldung nötig, auch ohne Kursnummer-Abgleich. Bei mehreren Kandidaten
+          // Genau ein Kandidat: eindeutig (einziger Kurs dieses Fachs/dieser Kursart) - wird unten trotzdem
+          // per Kursnummer/Lehrer geprüft (detailsPruefen), das ist gerade der häufigste Fall (ein/e
+          // Schüler:in hat i.d.R. nur einen Kurs je Fach/Kursart in den Leistungsdaten) und deckt z.B.
+          // Sp-GK1-statt-Sp-GK2-Umwahlen auf, die sonst unbemerkt blieben. Bei mehreren Kandidaten
           // (parallele Kurse, z.B. zwei GK-Kurse) wird über die aus dem Kürzel geratene Kursnummer
-          // versucht, den richtigen eindeutig zu bestimmen; gelingt das, gilt das ebenfalls als Treffer.
-          // Nur wenn auch das nicht eindeutig gelingt, wird die Zeile gemeldet (bester Rateversuch als
-          // Anzeige, aber als unsicher gekennzeichnet).
+          // versucht, den richtigen eindeutig zu bestimmen. Gelingt auch das nicht, wird die Zeile gemeldet
+          // (bester Rateversuch als Anzeige, aber als unsicher gekennzeichnet).
           const nummernTreffer =
             erwartetNummer != null ? kandidaten.find((kid) => parseKursnummerAusKuerzel(kursById.get(kid).kuerzel) === erwartetNummer) : null;
 
+          let gewaehlterKandidat;
           if (kandidaten.length === 1) {
-            alsErsatzVerwendeteKursIds.add(kandidaten[0]);
+            gewaehlterKandidat = kandidaten[0];
           } else if (nummernTreffer != null) {
-            alsErsatzVerwendeteKursIds.add(nummernTreffer);
+            gewaehlterKandidat = nummernTreffer;
           } else {
             const bestGuess = kandidaten[0];
             alsErsatzVerwendeteKursIds.add(bestGuess);
@@ -2020,6 +2040,54 @@
               kursLeistungsdaten: `${kursLabelOrId(bestGuess)} (unsicher – ${kandidaten.length} passende Kurse, Kursnummer nicht eindeutig zuordenbar)`,
               hinweis: "abweichender Kurs",
             });
+            continue;
+          }
+
+          alsErsatzVerwendeteKursIds.add(gewaehlterKandidat);
+
+          // Detail-Vergleich (optional, Default an): Fach+Kursart passen bereits (sonst wäre der Kurs kein
+          // Kandidat) - jetzt zusätzlich Kursnummer und, falls möglich, Lehrer vergleichen, um z.B. eine
+          // Sp-GK1-statt-Sp-GK2-Verwechslung zu erkennen. Beide Signale werden nur gewertet, wenn sie auf
+          // beiden Seiten überhaupt bestimmbar sind (kein Kurs-Kürzel-Suffix bzw. kein Lehrer-Katalog
+          // geladen zählt nicht als Abweichung - das wäre sonst bei Fächern ohne Parallelkurs bzw. ohne
+          // ladbaren Lehrer-Katalog ständig ein falscher Alarm).
+          if (detailsPruefen) {
+            const kandidatKurs = kursById.get(gewaehlterKandidat);
+            const abweichungen = [];
+
+            const tatsaechlicheNummer = parseKursnummerAusKuerzel(kandidatKurs.kuerzel);
+            if (erwartetNummer != null && tatsaechlicheNummer != null && erwartetNummer !== tatsaechlicheNummer) {
+              abweichungen.push(`Kursbezeichnung (Blockung: Nr. ${erwartetNummer}, Leistungsdaten: Nr. ${tatsaechlicheNummer})`);
+            }
+
+            if (lehrerById.size > 0) {
+              const erwarteteLehrerKuerzel = new Set((erwartetInfo && erwartetInfo.lehrer ? erwartetInfo.lehrer : []).map((l) => l.kuerzel));
+              const tatsaechlicheLehrerIds = [kandidatKurs.lehrer, ...(kandidatKurs.weitereLehrer || []).map((wl) => wl.idLehrer)].filter(
+                (id) => id != null
+              );
+              const tatsaechlicheLehrerKuerzel = new Set(
+                tatsaechlicheLehrerIds.map((id) => lehrerById.get(id)).filter(Boolean).map((l) => l.kuerzel)
+              );
+              if (erwarteteLehrerKuerzel.size > 0 && tatsaechlicheLehrerKuerzel.size > 0) {
+                const ueberschneidung = [...erwarteteLehrerKuerzel].some((k) => tatsaechlicheLehrerKuerzel.has(k));
+                if (!ueberschneidung) {
+                  abweichungen.push(
+                    `Lehrer:in (Blockung: ${[...erwarteteLehrerKuerzel].join(", ")}, Leistungsdaten: ${[...tatsaechlicheLehrerKuerzel].join(", ")})`
+                  );
+                }
+              }
+            }
+
+            if (abweichungen.length > 0) {
+              results.push({
+                schuelerLabel: label,
+                fachLabel: fachLabel(erwartet.fachID),
+                kursart: erwartet.kursart,
+                kursBlockung: blockungsKursLabel(erwartet.kursId),
+                kursLeistungsdaten: kursLabelOrId(gewaehlterKandidat),
+                hinweis: `abweichender Kurs (${abweichungen.join("; ")})`,
+              });
+            }
           }
         }
 

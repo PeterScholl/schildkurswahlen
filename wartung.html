@@ -334,6 +334,9 @@
     den richtigen eindeutig zu bestimmen – Rateversuch, kein Garant. Gemeldet wird, wenn ein laut Blockung
     erwarteter Kurs in den Leistungsdaten ganz fehlt, oder wenn bei mehreren passenden Kursen keine
     eindeutige Kursnummer-Zuordnung möglich war (dann mit Hinweis "unsicher" – bitte von Hand prüfen).
+    Mit der Option unten wird zusätzlich geprüft, ob auch der als eindeutig erkannte Kurs wirklich passt
+    (z.B. Sp-GK1 laut Blockung, aber Sp-GK2 in den Leistungsdaten) – ohne diese Prüfung fällt so eine
+    Verwechslung sonst nicht auf, weil pro Fach/Kursart meist nur ein einziger Kurs in Frage kommt.
   </p>
   <div class="grid-form">
     <label>Stufe
@@ -341,6 +344,13 @@
     </label>
     <label>Blockung
       <select id="blockung-abgleich-blockung" disabled><option value="">(erst Stufe wählen)</option></select>
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label>
+      <input type="checkbox" id="blockung-abgleich-details" checked />
+      Auch Kursbezeichnung (Kursnummer) und Lehrer:in des eindeutig zugeordneten Kurses vergleichen, nicht
+      nur Fach und Kursart
     </label>
   </div>
   <div class="checkbox-row">

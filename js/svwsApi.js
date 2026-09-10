@@ -272,6 +272,14 @@
     return request("GET", `/gost/blockungen/${blockungsId}`);
   }
 
+  /** Liefert den kompletten Lehrer-Katalog der Schule (Kürzel/Name je Lehrkraft) - für
+   *  "Blockung mit Leistungsdaten abgleichen" (wartung.html), um die Lehrer-IDs an echten Kursen
+   *  (`KursDaten.lehrer`/`weitereLehrer`) mit den in der Blockung hinterlegten Namen/Kürzeln vergleichbar
+   *  zu machen. */
+  async function getLehrer() {
+    return request("GET", "/lehrer");
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -293,6 +301,7 @@
     getGostBlockungen,
     getGostBlockungsergebnis,
     getGostBlockungsdaten,
+    getLehrer,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,

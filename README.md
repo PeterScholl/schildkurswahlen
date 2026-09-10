@@ -288,10 +288,20 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller fü
   Fach/Kursart, ob die Blockung einen Kurs vorsieht, der in den Leistungsdaten fehlt oder dort auf einen
   *anderen* Kurs derselben Fach-/Kursart-Kombination zeigt (z.B. "SP-GK3" laut Blockung, aber "SP-GK4" in
   den Leistungsdaten – ein Hinweis auf eine Umwahl in eine parallele Kursschiene, die in Schild noch
-  nachgetragen werden müsste). Über die Checkbox **"Auch Kurse zeigen, die nur in den Leistungsdaten
-  stehen …"** lässt sich optional auch die umgekehrte Richtung mit anzeigen (kann bei Kursen außerhalb der
-  Blockung, z.B. Sport/Religion, mehr Rauschen erzeugen, deshalb standardmäßig aus). Rein lesende Prüfung
-  ohne Lösch-/Änderungsfunktion.
+  nachgetragen werden müsste). Die Checkbox **"Auch Kursbezeichnung (Kursnummer) und Lehrer:in … vergleichen"**
+  (Default: an) prüft zusätzlich den nach Fach+Kursart eindeutig bestimmten Kurs selbst – ohne sie fällt
+  z.B. "Sp-GK1" laut Blockung, aber "Sp-GK2" in den Leistungsdaten nicht auf, weil pro Fach/Kursart in den
+  Leistungsdaten einer Person meist ohnehin nur ein einziger Kurs in Frage kommt und dieser bislang
+  ungeprüft als Treffer galt. Verglichen werden dabei die aus dem Kurs-Kürzel geratene Kursnummer (wie beim
+  Auflösen mehrerer Parallelkurse) sowie – sofern ein Lehrer-Katalog geladen werden kann
+  (`SvwsApi.getLehrer()`) – eine Überschneidung der Lehrer-Kürzel (Blockung: `GostBlockungKursLehrer.kuerzel`
+  direkt aus den Blockungsdaten; echter Kurs: `KursDaten.lehrer`/`weitereLehrer[].idLehrer`, über den
+  Lehrer-Katalog aufgelöst). Beide Signale werden nur gewertet, wenn sie auf beiden Seiten überhaupt
+  bestimmbar sind (kein Kürzel-Suffix bzw. kein ladbarer Lehrer-Katalog zählt nicht als Abweichung, sonst
+  gäbe es bei Fächern ohne Parallelkurs ständig falschen Alarm). Über die Checkbox **"Auch Kurse zeigen,
+  die nur in den Leistungsdaten stehen …"** lässt sich optional auch die umgekehrte Richtung mit anzeigen
+  (kann bei Kursen außerhalb der Blockung, z.B. Sport/Religion, mehr Rauschen erzeugen, deshalb
+  standardmäßig aus). Rein lesende Prüfung ohne Lösch-/Änderungsfunktion.
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -601,6 +611,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getGostBlockungen(abiturjahr, halbjahr)` | `GET /gost/abiturjahrgang/{abiturjahr}/{halbjahr}/blockungen` | Blockungen (Planungsstände) einer Stufe in einem Gost-Halbjahr (`halbjahr` hier: 0=EF.1 … 5=Q2.2 - **nicht** dasselbe wie `GostJahrgang.halbjahr`, siehe `gostHalbjahrIndex()` in js/wartung.js) |
 | `getGostBlockungsergebnis(ergebnisId)` | `GET /gost/blockungen/zwischenergebnisse/{ergebnisId}` | Konkretes Blockungsergebnis inkl. Schienen/Kurse/Schüler-Zuordnung |
 | `getGostBlockungsdaten(blockungsId)` | `GET /gost/blockungen/{blockungsId}` | Grunddaten einer Blockung inkl. `kurse[]` mit Kursnummer/Suffix - Blockungs-Kurs-IDs sind eine eigene ID-Reihe, siehe Hinweis unten |
+| `getLehrer()` | `GET /lehrer` | Kompletter Lehrer-Katalog (Kürzel/Name je Lehrkraft, schulweit, nicht abschnittsabhängig) - für den optionalen Lehrer-Abgleich in "Blockung mit Leistungsdaten abgleichen" (wartung.html), löst dort die Lehrer-IDs echter Kurse (`KursDaten.lehrer`/`weitereLehrer`) in Kürzel auf |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -904,12 +915,23 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   `kursById.idFach`/`kursById.kursartAllg` der *tatsächlich vorhandenen* Kurse, bewusst nicht über
   `fachID`/`kursart` auf dem Leistungsdaten-Datensatz selbst, siehe Fehlerbehebung 9 - die sind bei per
   Blockung "hochgeschriebenen" Einträgen nicht zuverlässig befüllt). Kein passender Kurs vorhanden →
-  "fehlt in Leistungsdaten". Genau ein passender Kurs → gilt als Treffer, keine Meldung. Mehrere passende
-  Kurse (parallele Kurse desselben Fachs/derselben Kursart) → `parseKursnummerAusKuerzel()` versucht, über
-  die am Kürzel-Ende geratene Kursnummer (z.B. "SP-GK3" → 3) den laut Blockungs-Kursnummer richtigen
-  eindeutig zu bestimmen; gelingt das, ebenfalls kein Meldungsgrund, sonst → "abweichender Kurs" mit
-  Hinweis "unsicher" (bester Rateversuch, erkennbar unsicher). `alsErsatzVerwendeteKursIds` verhindert,
-  dass ein bereits zugeordneter Kurs bei aktivierter Checkbox "beide Richtungen" zusätzlich als
+  "fehlt in Leistungsdaten". Mehrere passende Kurse (parallele Kurse desselben Fachs/derselben Kursart) →
+  `parseKursnummerAusKuerzel()` versucht, über die am Kürzel-Ende geratene Kursnummer (z.B. "SP-GK3" → 3)
+  den laut Blockungs-Kursnummer richtigen eindeutig zu bestimmen; gelingt das nicht → "abweichender Kurs"
+  mit Hinweis "unsicher" (bester Rateversuch, erkennbar unsicher), sofort weiter zum nächsten Fach.
+  Andernfalls ist per Fach+Kursart (und ggf. Kursnummer) genau ein `gewaehlterKandidat` bestimmt - der
+  häufigste Fall ist dabei genau ein Kandidat von vornherein (eine Person hat i.d.R. nur einen Kurs je
+  Fach/Kursart in den Leistungsdaten). Bei aktivierter Checkbox **"Auch Kursbezeichnung … vergleichen"**
+  (`detailsPruefen`, Default an) wird dieser Kandidat zusätzlich geprüft, statt ihn blind als Treffer zu
+  werten (das war der ursprüngliche Bug: eine Sp-GK1-statt-Sp-GK2-Umwahl blieb im Ein-Kandidat-Fall
+  unbemerkt) - verglichen werden die aus dem Kürzel geratene Kursnummer sowie, falls der Lehrer-Katalog
+  geladen werden konnte (`SvwsApi.getLehrer()`, einmalig und nur bei Bedarf in `lehrerById` gecacht), eine
+  Überschneidung der Lehrer-Kürzel (Blockung: `GostBlockungKursLehrer.kuerzel` direkt aus
+  `blockungsKursInfo`; echter Kurs: `KursDaten.lehrer`/`weitereLehrer[].idLehrer`, über `lehrerById`
+  aufgelöst). Beide Signale zählen nur als Abweichung, wenn sie auf *beiden* Seiten bestimmbar sind (kein
+  Kürzel-Suffix bzw. kein ladbarer Lehrer-Katalog löst keinen falschen Alarm aus) - bei Abweichung →
+  "abweichender Kurs" mit den konkreten Unterschieden im Hinweistext. `alsErsatzVerwendeteKursIds`
+  verhindert, dass ein bereits zugeordneter Kurs bei aktivierter Checkbox "beide Richtungen" zusätzlich als
   "zusätzlich in Leistungsdaten" auftaucht (siehe Fehlerbehebung 10). `kursLabelOrId()`/`fachLabel()`
   lösen *echte* Kurs-/Fach-IDs über die bereits geladenen `kursById`/`schildFaecher` auf und fallen auf
   die reine ID zurück, falls dort nicht gefunden; `blockungsKursId`s werden dafür nie verwendet.
