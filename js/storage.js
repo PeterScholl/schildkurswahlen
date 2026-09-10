@@ -23,6 +23,9 @@
       kurseOhneWahlFilter: { fachIds: [], kursarten: [] }, // index.html Schritt 8 "Kurse ohne Forms-Wahl"; leer = alle (Default)
       leereKurseFilter: { fachLabels: [], kursarten: [] }, // wartung.html "Leere Kurse suchen" (Spaltenkopf-Filter); leer = alle (Default)
       checkLeererKursFilter: { kursarten: [] }, // wartung.html "Leistungsdaten mit leerem Kurs" (Spaltenkopf-Filter, z.B. um "PUK" auszublenden); leer = alle (Default)
+      untisImport: null, // wartung.html "Abgleich Untis mit Leistungsdaten": zuletzt eingelesene GPU015.TXT
+      // (Untis-Export "Kurswahl"), bleibt bis zum nächsten Einlesen gespeichert -
+      // {dateiname, importDatumIso, trenner, zeilen: [{studentKurzname, unterrichtsnummer, fach, unterrichtsalias, klasse, statistikkennzeichen, studentennummer}]}
       schuelerMatching: {},
       kursMatching: {},
       transferStartRow: null, // Excel-Zeilennummer (1-basiert, Kopfzeile = Zeile 1); null/leer = alle Zeilen übertragen

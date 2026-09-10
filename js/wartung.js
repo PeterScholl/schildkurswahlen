@@ -205,6 +205,7 @@
       renderSplitJahrgangTable();
       renderSplitKlasseTable();
       populateBlockungAbgleichStufen();
+      populateUntisAbgleichJahrgang();
     } catch (err) {
       setStatus(statusEl, err.message, "error", err);
     }
@@ -2364,6 +2365,401 @@
     await applyBlockungAbgleichRows([row]);
   }
 
+  // ---------- 8. Abgleich Untis mit Leistungsdaten ----------
+  // Vergleicht einen Untis-Export (GPU015.TXT, "Kurswahl der Studenten" - generisches DIF-Format, siehe
+  // untis.at/manual) mit den Leistungsdaten einer Jahrgangsstufe. Feldaufbau je Zeile laut offizieller
+  // Untis-Doku (kein Lehrer-Feld enthalten - das stünde nur in der separaten Unterrichts-Datei GPU002.TXT,
+  // hier bewusst nicht eingelesen, siehe deaktivierte Checkbox "Lehrer:in abgleichen" im HTML):
+  //   1 Student Kurzname, 2 Unterrichtsnummer, 3 Fach, 4 Unterrichtsalias, 5 Klasse,
+  //   6 Statistikkennzeichen, 7 Studentennummer (nur Export), 8-9 reserviert
+  // Trennzeichen zwischen den Feldern ist bei Untis beim Export frei wählbar (Komma/Semikolon/Tab/...,
+  // kein fester Standard) - wird deshalb aus der Datei selbst erkannt (erkenneUntisTrennzeichen()).
+
+  let untisAbgleichResults = []; // [{schuelerLabel, fachLabel, kursUntis, kursLeistungsdaten, hinweis}]
+
+  // "Statistikkennzeichen" (Feld 6) kodiert die spezifische Kursart - laut Nutzerangabe an dieser Schule
+  // 1/2/3/4/M/S/Z für LK1/LK2/AB3/AB4/GKM/GKS/ZK (dieselben spezifischen Kürzel, die auch
+  // SchuelerLeistungsdaten.kursart auf Schild-Seite trägt, siehe ZulaessigeKursart im SVWS-Server-
+  // Quellcode - Fehlerbehebung 15). Nicht dieselbe Codierung wie GOST_KURSART_LABELS oben (das ist das
+  // numerische 1-5-Enum aus der Gost-Blockung, ein anderer Kontext).
+  const UNTIS_STATISTIKKENNZEICHEN_KURSART = { 1: "LK1", 2: "LK2", 3: "AB3", 4: "AB4", M: "GKM", S: "GKS", Z: "ZK" };
+
+  /** Errät das in der Datei verwendete Feldtrennzeichen: das Zeichen, das über die meisten Zeilen hinweg
+   *  konsistent (gleiche, >1 Feldanzahl) auftritt, gewinnt. Reihenfolge bei Gleichstand (Semikolon vor
+   *  Komma vor Tab) folgt der in Deutschland gebräuchlichsten Untis-/Excel-Konvention. */
+  function erkenneUntisTrennzeichen(zeilen) {
+    const kandidaten = [";", ",", "\t"];
+    let bester = kandidaten[0];
+    let besteBewertung = -1;
+    for (const trenner of kandidaten) {
+      const haeufigkeit = new Map();
+      for (const z of zeilen) {
+        const n = z.split(trenner).length;
+        haeufigkeit.set(n, (haeufigkeit.get(n) || 0) + 1);
+      }
+      const [meistHaeufigeAnzahl, anzahlZeilenDamit] = [...haeufigkeit.entries()].sort((a, b) => b[1] - a[1])[0] || [0, 0];
+      const bewertung = meistHaeufigeAnzahl > 1 ? anzahlZeilenDamit : -1; // Trenner muss echt aufteilen
+      if (bewertung > besteBewertung) {
+        besteBewertung = bewertung;
+        bester = trenner;
+      }
+    }
+    return bester;
+  }
+
+  /** Parst eine einzelne DIF-Zeile in ihre Felder - berücksichtigt in Anführungszeichen (Textbegrenzer,
+   *  Untis-Default '"') gesetzte Felder, in denen das Trennzeichen selbst vorkommen darf, sowie "" als
+   *  Escape für ein Anführungszeichen innerhalb eines solchen Feldes. */
+  function parseUntisZeile(zeile, trenner) {
+    const felder = [];
+    let aktuelles = "";
+    let inQuotes = false;
+    for (let i = 0; i < zeile.length; i++) {
+      const ch = zeile[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (zeile[i + 1] === '"') {
+            aktuelles += '"';
+            i++;
+          } else {
+            inQuotes = false;
+          }
+        } else {
+          aktuelles += ch;
+        }
+      } else if (ch === '"' && aktuelles === "") {
+        inQuotes = true;
+      } else if (ch === trenner) {
+        felder.push(aktuelles);
+        aktuelles = "";
+      } else {
+        aktuelles += ch;
+      }
+    }
+    felder.push(aktuelles);
+    return felder;
+  }
+
+  /** Liest eine GPU015.TXT-Datei ein und liefert Trennzeichen + geparste Zeilen zurück. Untis-Exporte sind
+   *  laut Doku "ASCII", in der Praxis aber i.d.R. Windows-1252 (wegen Umlauten) - erst als UTF-8 versucht
+   *  (`fatal: true`, damit ungültige Byte-Folgen eine Exception auslösen statt stillschweigend als
+   *  Ersatzzeichen "�" durchzurutschen), bei Fehlschlag Fallback auf Windows-1252. */
+  async function parseUntisDatei(file) {
+    const buffer = await file.arrayBuffer();
+    let text;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    } catch {
+      text = new TextDecoder("windows-1252").decode(buffer);
+    }
+    const zeilenRoh = text.split(/\r\n|\r|\n/).filter((z) => z.trim() !== "");
+    if (zeilenRoh.length === 0) throw new Error("Die Datei enthält keine Zeilen.");
+    const trenner = erkenneUntisTrennzeichen(zeilenRoh);
+    const zeilen = zeilenRoh.map((z) => {
+      const f = parseUntisZeile(z, trenner);
+      return {
+        studentKurzname: (f[0] || "").trim(),
+        unterrichtsnummer: (f[1] || "").trim(),
+        fach: (f[2] || "").trim(),
+        unterrichtsalias: (f[3] || "").trim(),
+        klasse: (f[4] || "").trim(),
+        statistikkennzeichen: (f[5] || "").trim(),
+        studentennummer: (f[6] || "").trim(),
+      };
+    });
+    return { trenner, zeilen };
+  }
+
+  function untisTrennerLabel(trenner) {
+    return { ";": "Semikolon", ",": "Komma", "\t": "Tabulator" }[trenner] || `"${trenner}"`;
+  }
+
+  /** Zeigt an, welche Untis-Datei aktuell (aus einem früheren Einlesen) im state hinterlegt ist - läuft
+   *  auch beim Seitenaufruf, damit ein erneutes Hochladen nicht bei jeder Sitzung nötig ist. */
+  function renderUntisDateiStatus() {
+    const el = $("untis-datei-status");
+    if (!state.untisImport) {
+      el.textContent = "Noch keine Untis-Datei eingelesen.";
+      el.className = "status-msg";
+      return;
+    }
+    let datum = state.untisImport.importDatumIso;
+    try {
+      datum = new Date(state.untisImport.importDatumIso).toLocaleString("de-DE");
+    } catch {
+      // Datum unlesbar - Rohwert anzeigen statt abzubrechen
+    }
+    setStatus(
+      el,
+      `Zuletzt eingelesen: "${state.untisImport.dateiname}" (${state.untisImport.zeilen.length} Zeile(n), ${datum}).`,
+      "ok"
+    );
+  }
+
+  async function onUntisDateiChange(evt) {
+    const file = evt.target.files[0];
+    if (!file) return;
+    const statusEl = $("untis-datei-status");
+    setStatus(statusEl, `Lese "${file.name}" …`, "");
+    try {
+      const { trenner, zeilen } = await parseUntisDatei(file);
+      state.untisImport = { dateiname: file.name, importDatumIso: new Date().toISOString(), trenner, zeilen };
+      persist();
+      setStatus(
+        statusEl,
+        `"${file.name}" eingelesen: ${zeilen.length} Zeile(n) (Trennzeichen erkannt: ${untisTrennerLabel(trenner)}).`,
+        "ok"
+      );
+    } catch (err) {
+      setStatus(statusEl, `Datei konnte nicht gelesen werden: ${err.message}`, "error");
+    } finally {
+      evt.target.value = ""; // ermöglicht erneutes Auswählen derselben Datei (z.B. nach Korrektur)
+      updateUntisAbgleichButtonState();
+    }
+  }
+
+  /** Befüllt die Jahrgangsstufen-Auswahl aus dem bereits geladenen Schild-Katalog (unabhängig davon, ob
+   *  schon eine Untis-Datei eingelesen wurde) - reicht dafür die Zählung der Schüler:innen je Jahrgang mit,
+   *  damit man wie beim Split-Bereich sofort sieht, wo es überhaupt etwas zu vergleichen gibt. */
+  function populateUntisAbgleichJahrgang() {
+    const select = $("untis-abgleich-jahrgang");
+    const anzahlByJahrgang = new Map();
+    for (const s of schildSchueler) {
+      if (s.idJahrgang == null) continue;
+      anzahlByJahrgang.set(s.idJahrgang, (anzahlByJahrgang.get(s.idJahrgang) || 0) + 1);
+    }
+    const bisher = select.value;
+    select.innerHTML = jahrgangOptionsHtml(bisher ? Number(bisher) : null, anzahlByJahrgang);
+    select.disabled = schildJahrgaenge.length === 0;
+    updateUntisAbgleichButtonState();
+  }
+
+  function updateUntisAbgleichButtonState() {
+    const jahrgangGewaehlt = $("untis-abgleich-jahrgang").value !== "";
+    $("btn-run-untis-abgleich").disabled = !jahrgangGewaehlt || !state.untisImport;
+  }
+
+  async function onRunUntisAbgleich() {
+    const statusEl = $("untis-abgleich-status");
+    const jahrgangId = Number($("untis-abgleich-jahrgang").value);
+    const jahrgang = schildJahrgaenge.find((j) => j.id === jahrgangId);
+    if (!jahrgang) {
+      setStatus(statusEl, "Bitte eine Jahrgangsstufe auswählen.", "error");
+      return;
+    }
+    if (!state.untisImport) {
+      setStatus(statusEl, "Bitte zuerst eine Untis-Datei einlesen.", "error");
+      return;
+    }
+
+    const kursbezeichnungPruefen = $("untis-abgleich-kursbezeichnung").checked;
+    const kursartPruefen = $("untis-abgleich-kursart").checked;
+    const rewriteAb34ZuGks = $("untis-abgleich-rewrite-ab34-gks").checked;
+
+    // Untis-Zeilen nach Studentennummer (= Schild-Schüler-ID, siehe Kommentar oben) gruppiert - eine
+    // Person hat i.d.R. mehrere Zeilen (eine je gewähltem Fach/Kurs).
+    const untisBySchueler = new Map();
+    for (const z of state.untisImport.zeilen) {
+      const id = Number(z.studentennummer);
+      if (!Number.isFinite(id) || id <= 0) continue; // leere/ungültige Studentennummer - nicht zuordenbar
+      if (!untisBySchueler.has(id)) untisBySchueler.set(id, []);
+      untisBySchueler.get(id).push(z);
+    }
+
+    const schuelerDerStufe = schildSchueler.filter((s) => s.idJahrgang === jahrgangId);
+    if (schuelerDerStufe.length === 0) {
+      setStatus(statusEl, "Keine Schüler:innen im aktuell geladenen Status-Filter für diese Jahrgangsstufe gefunden.", "warn");
+      return;
+    }
+
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    const fachLabel = (id) => {
+      const f = fachById.get(id);
+      return f ? `${f.kuerzel} – ${f.bezeichnung || ""}` : `Fach-ID ${id}`;
+    };
+    // Untis-Fachkürzel -> Schild-Fach-ID, case-/leerzeichen-unabhängig verglichen (beide Systeme könnten
+    // leicht unterschiedlich schreiben, z.B. Groß-/Kleinschreibung).
+    const fachIdByUntisKuerzel = new Map(schildFaecher.map((f) => [(f.kuerzel || "").trim().toUpperCase(), f.id]));
+    // Je nach Untis-Konfiguration/Schule trägt das Feld "Fach" nicht das bloße Fachkürzel, sondern bereits
+    // die komplette Kursbezeichnung (z.B. "BI-GK2" statt "BI") - Untis kennt historisch keinen eigenen
+    // Kurs-Begriff, "Fach" wird dafür teils pro Kurs angelegt. Deshalb zusätzlich schulweit gegen die
+    // echten Kurs-Kürzel auflösbar (kursByKuerzel), bevor auf das bloße Fachkürzel zurückgefallen wird.
+    const kursByKuerzel = new Map();
+    for (const k of kursById.values()) {
+      if (k.kuerzel) kursByKuerzel.set(k.kuerzel.trim().toUpperCase(), k);
+    }
+
+    const total = schuelerDerStufe.length;
+    let processed = 0;
+    const progressEl = $("untis-abgleich-progress");
+    progressEl.max = total;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+    $("btn-run-untis-abgleich").disabled = true;
+
+    const results = [];
+    let fehler = 0;
+    const keineUntisZeilenLabels = []; // für den Tooltip an der Statuszeile - siehe unten
+    await mapWithConcurrency(schuelerDerStufe, 6, async (schueler) => {
+      try {
+        const label = schuelerLabel(schueler);
+        const meineUntisZeilen = untisBySchueler.get(schueler.id) || [];
+        if (meineUntisZeilen.length === 0) {
+          keineUntisZeilenLabels.push(label);
+          return;
+        }
+        const lad = await SvwsApi.getLernabschnittsdaten(schueler.id, abschnittId);
+
+        // Schild-Leistungsdaten dieser Person nach Fach-ID gruppiert - Fach kommt dabei aus dem bereits
+        // geladenen Kurskatalog (kursById.idFach), NICHT aus dem ggf. unzuverlässigen fachID-Feld auf dem
+        // Leistungsdaten-Datensatz selbst (dieselbe Vorsicht wie beim Blockung-Abgleich, siehe dort). Für
+        // den Kursart-Vergleich unten wird zusätzlich der Leistungsdaten-Eintrag selbst mitgeführt (`l`) -
+        // dessen `kursart`-Feld (die spezifische Kursart wie "AB3"/"GKM", nicht `kursartAllg` vom Kurs
+        // selbst) gibt es nur dort.
+        const meineKurseByFach = new Map();
+        for (const l of lad.leistungsdaten || []) {
+          if (l.kursID == null) continue;
+          const k = kursById.get(l.kursID);
+          if (!k || k.idFach == null) continue;
+          if (!meineKurseByFach.has(k.idFach)) meineKurseByFach.set(k.idFach, []);
+          meineKurseByFach.get(k.idFach).push({ kurs: k, leistungsdaten: l });
+        }
+
+        for (const untisZeile of meineUntisZeilen) {
+          const untisFachRoh = untisZeile.fach.trim().toUpperCase();
+
+          // Erst versuchen, "Fach" als komplette Kursbezeichnung gegen den echten Kurskatalog aufzulösen
+          // (deckt den Fall ab, dass Untis dort schon "BI-GK2" statt nur "BI" führt) - nur wenn das nicht
+          // passt, auf das bloße Fachkürzel zurückfallen. Im ersten Fall ist die erwartete Kursbezeichnung
+          // damit auch gleich bekannt (der gefundene Kurs selbst), im zweiten Fall kommt sie aus
+          // "Unterrichtsalias".
+          const kursTreffer = kursByKuerzel.get(untisFachRoh);
+          const fachId = kursTreffer ? kursTreffer.idFach : fachIdByUntisKuerzel.get(untisFachRoh);
+          const erwarteteKursbezeichnung = kursTreffer ? kursTreffer.kuerzel : untisZeile.unterrichtsalias || null;
+          const kursUntisLabel = erwarteteKursbezeichnung || untisZeile.fach;
+
+          if (fachId == null) {
+            results.push({
+              schuelerLabel: label,
+              fachLabel: `${untisZeile.fach} (unbekanntes Fach-/Kurs-Kürzel in Schild)`,
+              kursUntis: kursUntisLabel,
+              kursLeistungsdaten: "–",
+              hinweis: "Untis-Fach-/Kurs-Kürzel in Schild nicht gefunden",
+            });
+            continue;
+          }
+
+          const kandidaten = meineKurseByFach.get(fachId) || [];
+          if (kandidaten.length === 0) {
+            results.push({
+              schuelerLabel: label,
+              fachLabel: fachLabel(fachId),
+              kursUntis: kursUntisLabel,
+              kursLeistungsdaten: "– (fehlt)",
+              hinweis: "fehlt in Leistungsdaten",
+            });
+            continue;
+          }
+
+          const abweichungen = [];
+
+          // Kursbezeichnung: nur werten, wenn überhaupt eine erwartete Bezeichnung bestimmbar ist (leeres
+          // "Unterrichtsalias" und kein direkter Kurs-Treffer zählt nicht als Abweichung).
+          if (kursbezeichnungPruefen && erwarteteKursbezeichnung) {
+            const erwartetNorm = erwarteteKursbezeichnung.trim().toUpperCase();
+            const treffer = kandidaten.some((e) => (e.kurs.kuerzel || "").trim().toUpperCase() === erwartetNorm);
+            if (!treffer) {
+              abweichungen.push(
+                `Kursbezeichnung (Untis: ${erwarteteKursbezeichnung}, Leistungsdaten: ${kandidaten.map((e) => e.kurs.kuerzel).join(", ")})`
+              );
+            }
+          }
+
+          // Kursart: "Statistikkennzeichen" (Feld 6) ist selbst schon eine mögliche Fehlerquelle in der
+          // Untis-Datei (leer oder ein unerwarteter Code) - wird deshalb als eigener Befund gemeldet,
+          // nicht stillschweigend übersprungen wie eine nicht bestimmbare Kursbezeichnung oben.
+          if (kursartPruefen) {
+            const rohCode = untisZeile.statistikkennzeichen.trim().toUpperCase();
+            if (rohCode === "") {
+              abweichungen.push("Kursart in Untis-Datei fehlt (Statistikkennzeichen leer)");
+            } else if (!(rohCode in UNTIS_STATISTIKKENNZEICHEN_KURSART)) {
+              abweichungen.push(`unbekanntes Statistikkennzeichen "${rohCode}" in Untis-Datei`);
+            } else {
+              let untisKursart = UNTIS_STATISTIKKENNZEICHEN_KURSART[rohCode];
+              if (rewriteAb34ZuGks && (untisKursart === "AB3" || untisKursart === "AB4")) untisKursart = "GKS";
+              // Nur werten, wenn mindestens ein Kandidat überhaupt eine Kursart-Angabe in Schild hat -
+              // sonst (bei allen Kandidaten leer) ist der Vergleich nicht aussagekräftig, kein falscher
+              // Alarm.
+              const irgendeineKursartBekannt = kandidaten.some((e) => e.leistungsdaten.kursart);
+              const treffer = kandidaten.some(
+                (e) => e.leistungsdaten.kursart && e.leistungsdaten.kursart.trim().toUpperCase() === untisKursart
+              );
+              if (irgendeineKursartBekannt && !treffer) {
+                abweichungen.push(
+                  `Kursart (Untis: ${untisKursart}, Leistungsdaten: ${kandidaten.map((e) => e.leistungsdaten.kursart || "?").join(", ")})`
+                );
+              }
+            }
+          }
+
+          if (abweichungen.length === 0) continue; // alles geprüfte passt - kein Meldungsgrund
+
+          results.push({
+            schuelerLabel: label,
+            fachLabel: fachLabel(fachId),
+            kursUntis: kursUntisLabel,
+            kursLeistungsdaten: kandidaten.map((e) => kursLabel(e.kurs)).join(", "),
+            hinweis: abweichungen.join("; "),
+          });
+        }
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Prüfe ${processed} / ${total} Schüler:innen …`, "");
+      }
+    });
+
+    progressEl.classList.add("hidden");
+    untisAbgleichResults = results;
+    renderUntisAbgleichTable();
+    $("btn-run-untis-abgleich").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} Abweichung(en) bei ${total} Schüler:innen der Stufe gefunden` +
+        (fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : "") +
+        (keineUntisZeilenLabels.length
+          ? ` (${keineUntisZeilenLabels.length} Schüler:innen ohne zuordenbare Untis-Zeile - Studentennummer nicht gefunden - zum Ansehen von bis zu 10 Namen hier mit der Maus verweilen)`
+          : "") +
+        ".",
+      results.length || keineUntisZeilenLabels.length ? "warn" : "ok"
+    );
+    // Tooltip (natives title-Attribut) mit bis zu 10 Namen der "ohne zuordenbare Untis-Zeile"-Schüler:innen
+    // - erspart einen eigenen Popover für nur diesen einen Diagnose-Fall. Leerer String löscht einen
+    // eventuell noch von einem vorherigen Lauf stehenden Tooltip.
+    statusEl.title = keineUntisZeilenLabels.length
+      ? keineUntisZeilenLabels.slice(0, 10).join("\n") +
+        (keineUntisZeilenLabels.length > 10 ? `\n… und ${keineUntisZeilenLabels.length - 10} weitere` : "")
+      : "";
+  }
+
+  function renderUntisAbgleichTable() {
+    const tbody = document.querySelector("#untis-abgleich-table tbody");
+    tbody.innerHTML = untisAbgleichResults
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.schuelerLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.kursUntis)}</td>
+        <td>${escapeHtml(r.kursLeistungsdaten)}</td>
+        <td>${escapeHtml(r.hinweis)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
   // ---------- 4. Speichern / Laden ----------
   // Identisch zu Schritt 7 in index.html/js/app.js (derselbe Storage.exportJson()/importJson(), derselbe
   // geteilte state) - bewusst als eigene Kopie hier, damit man für Export/Import/Reset nicht extra auf die
@@ -2493,6 +2889,11 @@
     document.querySelector("#blockung-abgleich-table").addEventListener("click", (evt) => {
       if (evt.target.classList.contains("blockung-abgleich-apply-single")) onApplyBlockungAbgleichSingle(evt);
     });
+
+    $("untis-datei-input").addEventListener("change", onUntisDateiChange);
+    $("untis-abgleich-jahrgang").addEventListener("change", updateUntisAbgleichButtonState);
+    $("btn-run-untis-abgleich").addEventListener("click", onRunUntisAbgleich);
+    renderUntisDateiStatus();
 
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);

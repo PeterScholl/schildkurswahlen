@@ -160,3 +160,54 @@ Bewusst **nicht** verschoben: alles, was echten Datei-lokalen Laufzeit-Zustand b
 unterscheiden sich auch inhaltlich zwischen den Seiten). Eine Auslagerung davon würde entweder viele
 Parameter durchreichen oder eine größere Umbau-Aktion (gemeinsam verwalteter Zustand) erfordern - siehe
 aktualisierten Punkt 3 oben.
+
+### 6. Neuer Bereich "Abgleich Untis mit Leistungsdaten" (wartung.html)
+
+Umgesetzt (September 2026): Liest einen Untis-Export (Datei "GPU015.TXT", Kurswahl der Studenten - DIF-
+Format) ein und vergleicht ihn mit den Leistungsdaten einer wählbaren Jahrgangsstufe. Die Datei bleibt nach
+dem Einlesen im `state` (JSON) gespeichert, bis eine neue eingelesen wird - kein erneutes Hochladen pro
+Sitzung nötig. Zwei Checkboxen: "Kursbezeichnung abgleichen" (funktioniert, Default an) und "Lehrer:in
+abgleichen" (aktuell deaktiviert, s.u.).
+
+Vor der Umsetzung wurde recherchiert (offizielle Untis-Doku, `untis.at/manual`) und mit Rückfrage an den
+Nutzer geklärt, statt blind zu raten:
+
+- Das Feldtrennzeichen ist bei Untis beim Export frei wählbar (kein fester Standard) - wird deshalb aus der
+  Datei selbst erkannt, nicht fest angenommen.
+- **GPU015.txt enthält laut Doku kein Lehrer-Feld** - das stünde nur in einer separaten Datei (GPU002.txt,
+  "Unterricht"). Auf Nachfrage entschieden: fürs Erste nur Kursbezeichnung abgleichen, die
+  Lehrer-Abgleich-Checkbox schon in der UI vorsehen, aber deaktiviert ("noch nicht verfügbar, benötigt
+  zusätzlich GPU002.txt") - Einlesen einer zweiten Datei und Verknüpfung über "Unterrichtsnummer" bleibt
+  eine mögliche spätere Erweiterung.
+- Schüler:innen werden über Feld 7 ("Studentennummer") der Schild-internen Schüler-ID zugeordnet - auf
+  Nachfrage bestätigt, dass das bei diesem Nutzer zutrifft (Untis wurde ursprünglich mit Schild-Daten
+  importiert).
+
+Bewusst noch **nicht** umgesetzt (auf expliziten Wunsch, um den ersten Wurf klein zu halten): Rewrite-Regeln
+für Kursbezeichnungen und eine Liste nicht zu beachtender Elemente ("kann später erweitert werden") sowie
+jegliche Lösch-/Änderungsfunktion (anders als beim Blockung-Abgleich aktuell kein "Übernehmen").
+
+**Nachtrag (September 2026):** Mit echten Daten getestet - real existierende Kurse wie "BI-GK2" wurden als
+"unbekanntes Fach-Kürzel in Schild" gemeldet. Ursache: Bei diesem Nutzer trägt Untis' Feld "Fach" nicht das
+bloße Fachkürzel ("BI"), sondern bereits die komplette Kursbezeichnung ("BI-GK2") - der ursprüngliche
+Abgleich nur gegen die Schild-Fachkürzel-Tabelle fand das naturgemäß nicht. Fix: zweistufige Auflösung -
+zuerst wird versucht, "Fach" direkt gegen den echten (schulweiten) Kurskatalog aufzulösen, erst danach
+gegen die bloßen Fachkürzel. Siehe README.md, Abschnitt zu `onRunUntisAbgleich()`.
+
+**Nachtrag 2 (September 2026):** Auf Nachfrage die erste konkrete Erweiterung der beiden ursprünglich
+zurückgestellten Punkte umgesetzt - Kursart-Abgleich (mit Rewrite-Regel) statt der ganzen offenen Liste
+nicht zu beachtender Elemente, die weiterhin offen bleibt:
+
+- Neue Checkbox **"Kursart abgleichen"** (Default an): "Statistikkennzeichen" (Feld 6 der Untis-Datei) wird
+  über eine feste Tabelle (1/2/3/4/M/S/Z → LK1/LK2/AB3/AB4/GKM/GKS/ZK, laut Nutzerangabe für diese Schule
+  gültig) in die spezifische Kursart übersetzt und gegen `SchuelerLeistungsdaten.kursart` verglichen (nicht
+  `KursDaten.kursartAllg` - das kennt diese Unterscheidung nicht). Ein leeres oder unbekanntes
+  Statistikkennzeichen wird selbst gemeldet ("Kursart in Untis-Datei fehlt"/"unbekanntes
+  Statistikkennzeichen") statt stillschweigend übersprungen zu werden - eigens nachgefragt: "leere
+  Kursarten in der GPU wären auch Mist und zu melden".
+- Erste **Rewrite-Regel** als eigene Checkbox **"AB3/AB4 als GKS werten"** (Default aus, nur wirksam
+  zusammen mit "Kursart abgleichen") - manchmal nötig, weil AB3/AB4 (3./4. Abiturfach) bei manchen Schulen
+  nicht 1:1 dem in Schild hinterlegten Kursart-Kürzel entspricht. Bewusst als eigenständige, unabhängig
+  schaltbare Checkbox (nicht Teil von "Kursart abgleichen" selbst) - Vorlage für weitere Rewrite-Regeln,
+  die bei Bedarf als weitere Checkboxen ergänzt werden können, bis sich ein Muster für eine generischere
+  Regel-Liste abzeichnet.

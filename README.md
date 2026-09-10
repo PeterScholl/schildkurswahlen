@@ -178,9 +178,9 @@ braucht jede Seite ihre eigene Verbindungseingabe).
 
 Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
 Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
-**3. Wartung** mit fünf Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
+**3. Wartung** mit sechs Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
 `wartung-baustein` in `css/style.css`) – auf-/zuklappbar über einen Klick auf die Überschrift, standardmäßig
-eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller fünf Bausteine erschlägt:
+eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sechs Bausteine erschlägt:
 
 - **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr
@@ -313,6 +313,30 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller fü
   komplette Kurskatalog keine eindeutige Kursnummer-Zuordnung liefert – die bleiben zur manuellen Prüfung
   stehen. Erfolgreich übernommene Zeilen verschwinden aus der Ergebnisliste; fehlgeschlagene bleiben mit
   entsprechendem Protokoll-Hinweis stehen.
+
+- **"Abgleich Untis mit Leistungsdaten"** – vergleicht einen Untis-Export (Datei "GPU015.TXT", "Kurswahl
+  der Studenten") mit den Leistungsdaten einer Jahrgangsstufe. Per Datei-Auswahl wird die Untis-Datei
+  eingelesen; sie bleibt danach (als JSON) im `state` gespeichert, bis eine neue eingelesen wird – ein
+  erneutes Hochladen ist also nicht bei jedem Abgleich nötig, auch nicht nach einem Neuladen der Seite.
+  Checkboxen steuern, was verglichen wird: **"Kursbezeichnung abgleichen"** (Default an – vergleicht
+  zusätzlich zum Fach auch die konkrete Kursbezeichnung), **"Kursart abgleichen"** (Default an – vergleicht
+  die aus "Statistikkennzeichen" abgeleitete spezifische Kursart, s.u.) und **"Lehrer:in abgleichen"**
+  (aktuell deaktiviert – die Kurswahl-Datei enthält dafür keine Information, das bräuchte zusätzlich die
+  separate Untis-Datei GPU002.TXT, für eine spätere Erweiterung vorgesehen). Eine erste **Rewrite-Regel**
+  (auf Nachfrage ergänzt, Default aus): **"AB3/AB4 als GKS werten"** – manchmal ist es nötig, diese beiden
+  von Untis gemeldeten Kursarten beim Vergleich wie "GKS" zu behandeln; nur wirksam, wenn "Kursart
+  abgleichen" aktiv ist. Weitere Rewrite-Regeln oder eine Liste nicht zu beachtender Elemente sind als
+  spätere Erweiterung vorgesehen (dann eher als generische Liste statt weiterer Einzel-Checkboxen). Danach
+  **Jahrgangsstufe** wählen (aus dem bereits geladenen Schild-Jahrgangskatalog, mit Schüler:innen-Anzahl je
+  Stufe) und "Abgleichen" klicken – geprüft wird je Schüler:in dieser Stufe, ob die in Untis gewählten
+  Fächer (und optional Kursbezeichnungen/Kursarten) in den Leistungsdaten wiederzufinden sind; auch ein
+  leeres oder unbekanntes "Statistikkennzeichen" in der Untis-Datei selbst wird gemeldet, nicht
+  stillschweigend übersprungen. Schüler:innen werden über die "Studentennummer" der Untis-Datei der
+  Schild-internen Schüler-ID zugeordnet – Voraussetzung dafür ist, dass diese beim Untis-Export tatsächlich
+  befüllt wird (z.B. weil Untis ursprünglich mit Schild-Daten importiert wurde); Schüler:innen der Stufe
+  ohne zuordenbare Untis-Zeile werden nicht geprüft, sondern nur gezählt – bis zu 10 ihrer Namen stehen als
+  Tooltip an der Statuszeile. Rein lesende Prüfung ohne Lösch-/Änderungsfunktion (anders als beim
+  Blockung-Abgleich aktuell kein "Übernehmen").
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -1038,6 +1062,67 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   `onApplyBlockungAbgleichSelected()`/`onApplyBlockungAbgleichSingle(evt)` sind die Checkbox-Auswahl- bzw.
   Einzelzeilen-Wrapper (beide mit `confirm()`-Sicherheitsabfrage), `onBlockungAbgleichSelectAll(evt)` die
   Spaltenkopf-Checkbox - alle drei demselben Muster wie z.B. bei "Leere Kurse suchen" folgend.
+
+- **"Abgleich Untis mit Leistungsdaten"**: liest einen Untis-Export (GPU015.TXT, "Kurswahl der Studenten" -
+  generisches DIF-Format, siehe [untis.at/manual](https://www.untis.at/manual/hid_export_kurswahl.htm))
+  ein und vergleicht ihn mit den Leistungsdaten einer Jahrgangsstufe. Feldaufbau je Zeile laut Untis-Doku:
+  1 Student Kurzname, 2 Unterrichtsnummer, 3 Fach, 4 Unterrichtsalias, 5 Klasse, 6 Statistikkennzeichen,
+  7 Studentennummer (nur Export), 8-9 reserviert - **kein Lehrer-Feld** (das stünde nur in der separaten
+  Unterrichts-Datei GPU002.TXT, hier bewusst nicht eingelesen; die Checkbox "Lehrer:in abgleichen" im HTML
+  ist deshalb deaktiviert, für eine spätere Erweiterung vorgesehen). Das Trennzeichen zwischen den Feldern
+  ist bei Untis beim Export frei wählbar (kein fester Standard) - `erkenneUntisTrennzeichen(zeilen)` rät es
+  aus der Datei selbst (das Zeichen, das über die meisten Zeilen hinweg konsistent dieselbe, >1 große
+  Feldanzahl liefert, gewinnt; bei Gleichstand Semikolon vor Komma vor Tab). `parseUntisZeile(zeile,
+  trenner)` ist ein kleiner handgeschriebener CSV-artiger Parser (kein externe Bibliothek nötig) - beachtet
+  in Anführungszeichen gesetzte Felder (Untis-Textbegrenzer-Default `"`, `""` als Escape für ein
+  Anführungszeichen darin), in denen das Trennzeichen selbst vorkommen darf. `parseUntisDatei(file)` liest
+  die Datei als `ArrayBuffer` und dekodiert sie zunächst mit `TextDecoder("utf-8", {fatal: true})` - schlägt
+  das fehl (ungültige Byte-Folge), wird auf Windows-1252 zurückgefallen, da Untis-Exporte trotz "ASCII" in
+  der Doku in der Praxis wegen der Umlaute meist so kodiert sind. Das Ergebnis (`{dateiname,
+  importDatumIso, trenner, zeilen}`) landet in `state.untisImport` (persistiert wie der Rest des
+  Zustands über `Storage`, bleibt also bis zum nächsten Einlesen erhalten) - `renderUntisDateiStatus()`
+  zeigt das beim Seitenaufruf sofort an, kein erneutes Hochladen pro Sitzung nötig.
+  `populateUntisAbgleichJahrgang()` befüllt die Jahrgangsstufen-Auswahl aus dem bereits geladenen
+  Schild-Jahrgangskatalog (unabhängig davon, ob schon eine Untis-Datei da ist) über die schon vorhandene
+  `jahrgangOptionsHtml()` (dieselbe Funktion wie bei "Split in Jahrgangskurse"), mit
+  Schüler:innen-Anzahl je Stufe. `onRunUntisAbgleich()` gruppiert die Untis-Zeilen nach "Studentennummer"
+  (= Schild-Schüler-ID) und vergleicht je Schüler:in der gewählten Stufe. Fach-/Kursbezeichnungs-Auflösung
+  läuft zweistufig (`kursByKuerzel`/`fachIdByUntisKuerzel`), weil sich in der Praxis zeigte, dass Untis' Feld
+  "Fach" je nach Schule/Konfiguration nicht das bloße Fachkürzel trägt, sondern bereits die komplette
+  Kursbezeichnung (z.B. "BI-GK2" statt "BI" - Untis kennt historisch keinen eigenen Kurs-Begriff, "Fach"
+  wird dafür teils pro Kurs angelegt): Zuerst wird versucht, das Untis-"Fach" schulweit gegen die echten
+  Kurs-Kürzel aufzulösen (`kursByKuerzel`, aus `kursById`) - gelingt das, sind Fach *und* erwartete
+  Kursbezeichnung direkt bekannt (der gefundene Kurs selbst). Erst wenn das fehlschlägt, wird auf das
+  bloße Fachkürzel gegen `schildFaecher` zurückgefallen (`fachIdByUntisKuerzel`) - dann kommt die erwartete
+  Kursbezeichnung stattdessen aus dem separaten Feld "Unterrichtsalias" (kann in diesem Fall auch leer
+  sein). Die eigenen Leistungsdaten-Kurse kommen wie beim Blockung-Abgleich aus `kursById` (nicht aus dem
+  Leistungsdaten-eigenen `fachID`-Feld) - `meineKurseByFach` hält dafür je Fach eine Liste von
+  `{kurs, leistungsdaten}`-Paaren (nicht nur den Kurs), weil der Kursart-Vergleich unten das `kursart`-Feld
+  des Leistungsdaten-*Eintrags* selbst braucht (das gibt es nur dort, nicht auf `KursDaten`, die nur die
+  allgemeine `kursartAllg` kennen). Fehlt ein Fach komplett → "fehlt in Leistungsdaten"; sonst werden pro
+  Untis-Zeile bis zu zwei unabhängige Signale in ein `abweichungen`-Array gesammelt (Muster wie beim
+  Detail-Vergleich im Blockung-Abgleich):
+  - **Kursbezeichnung** (Checkbox "Kursbezeichnung abgleichen", Default an, nur gewertet wenn eine
+    erwartete Bezeichnung überhaupt bestimmbar ist): keiner der zum Fach passenden Schild-Kurse hat dieses
+    Kürzel → Abweichung.
+  - **Kursart** (Checkbox "Kursart abgleichen", Default an): "Statistikkennzeichen" (Feld 6) wird über
+    `UNTIS_STATISTIKKENNZEICHEN_KURSART` (`{1: "LK1", 2: "LK2", 3: "AB3", 4: "AB4", M: "GKM", S: "GKS",
+    Z: "ZK"}`, an dieser Schule so verwendet) in die spezifische Kursart übersetzt - dieselben Kürzel, die
+    `SchuelerLeistungsdaten.kursart` auf Schild-Seite trägt (siehe `ZulaessigeKursart` im
+    SVWS-Server-Quellcode, Fehlerbehebung 15). Leeres oder unbekanntes Statistikkennzeichen wird selbst als
+    Befund gemeldet ("Kursart in Untis-Datei fehlt"/"unbekanntes Statistikkennzeichen"), nicht
+    stillschweigend übersprungen - auf Nachfrage ergänzt, da auch das ein Datenqualitätsproblem in der
+    Untis-Datei ist. Rewrite-Regel-Checkbox **"AB3/AB4 als GKS werten"** (Default aus, nur wirksam wenn
+    "Kursart abgleichen" aktiv ist) biegt die übersetzte Kursart vor dem Vergleich entsprechend um - manche
+    Schulen brauchen das, weil AB3/AB4 (3./4. Abiturfach) bei ihnen nicht 1:1 dem in Schild hinterlegten
+    Kursart-Kürzel entspricht. Gewertet wird nur, wenn mindestens einer der Kandidaten-Kurse überhaupt eine
+    Kursart-Angabe in Schild hat (sonst kein aussagekräftiger Vergleich möglich, kein falscher Alarm).
+
+  Schüler:innen der Stufe, für die keine passende "Studentennummer" in der Untis-Datei gefunden wurde,
+  werden nicht geprüft, sondern nur gezählt (`keineUntisZeilenLabels`) - bis zu 10 ihrer Namen stehen als
+  natives `title`-Tooltip an der Statuszeile (Maus draufhalten), der Rest nur als "… und N weitere". Rein
+  lesend,
+  keine Lösch-/Änderungsfunktion (anders als beim Blockung-Abgleich noch kein "Übernehmen").
 
 `onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
 `js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`

@@ -392,6 +392,84 @@
 
   </details>
 
+  <details class="wartung-baustein">
+  <summary><h3>Abgleich Untis mit Leistungsdaten</h3></summary>
+  <p class="hint">
+    Vergleicht die Kurswahlen aus einem Untis-Export (Datei "GPU015.TXT", Kurswahl der Studenten - DIF-
+    Format) mit den tatsächlich eingetragenen Leistungsdaten der Schüler:innen einer Jahrgangsstufe. Die
+    Datei bleibt nach dem Einlesen gespeichert, bis eine neue eingelesen wird - ein erneutes Hochladen ist
+    also nicht bei jedem Abgleich nötig. Verglichen wird je Schüler:in zunächst anhand des Fachs, optional
+    zusätzlich anhand der Kursbezeichnung ("Unterrichtsalias" aus der Untis-Datei gegen das Kurs-Kürzel in
+    Schild) und/oder der Kursart ("Statistikkennzeichen" aus der Untis-Datei - 1/2/3/4/M/S/Z für
+    LK1/LK2/AB3/AB4/GKM/GKS/ZK - gegen die Kursart des Leistungsdaten-Eintrags in Schild; ein leeres oder
+    unbekanntes Statistikkennzeichen wird als eigener Befund gemeldet, nicht stillschweigend übersprungen).
+    Schüler:innen werden über die "Studentennummer" (Feld 7 der Untis-Datei) der Schild-internen
+    Schüler-ID zugeordnet - stimmt das bei Ihnen nicht überein, findet der Abgleich diese Person nicht.
+    Trennzeichen und Zeichensatz der Datei werden automatisch erkannt (Untis lässt beim Export freie Wahl
+    des Trennzeichens). Ein Abgleich der unterrichtenden Lehrkraft ist (noch) nicht möglich, da die
+    Kurswahl-Datei dafür keine Information enthält (das stünde nur in der separaten Unterrichts-Datei
+    GPU002.TXT) - für eine spätere Erweiterung vorgesehen, ebenso wie eine Liste nicht zu beachtender
+    Elemente. Rein lesende Prüfung ohne Lösch-/Änderungsfunktion.
+  </p>
+
+  <div class="grid-form">
+    <label>Untis-Datei (GPU015.TXT)
+      <input type="file" id="untis-datei-input" accept=".txt,text/plain" />
+    </label>
+  </div>
+  <span id="untis-datei-status" class="status-msg"></span>
+
+  <div class="checkbox-row">
+    <label>
+      <input type="checkbox" id="untis-abgleich-kursbezeichnung" checked />
+      Kursbezeichnung abgleichen (nicht nur Fach)
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label>
+      <input type="checkbox" id="untis-abgleich-kursart" checked />
+      Kursart abgleichen (Statistikkennzeichen 1/2/3/4/M/S/Z gegen LK1/LK2/AB3/AB4/GKM/GKS/ZK in Schild)
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label title="Rewrite-Regel: wird nur angewendet, wenn 'Kursart abgleichen' oben aktiv ist">
+      <input type="checkbox" id="untis-abgleich-rewrite-ab34-gks" />
+      Rewrite-Regel: AB3/AB4 (laut Statistikkennzeichen) beim Vergleich als GKS werten
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label title="Benötigt zusätzlich die Untis-Datei GPU002.TXT (Unterricht) - noch nicht implementiert">
+      <input type="checkbox" id="untis-abgleich-lehrer" disabled />
+      Lehrer:in abgleichen (noch nicht verfügbar - benötigt zusätzlich GPU002.TXT)
+    </label>
+  </div>
+
+  <div class="grid-form">
+    <label>Jahrgangsstufe
+      <select id="untis-abgleich-jahrgang" disabled><option value="">(erst Schild-Daten laden)</option></select>
+    </label>
+  </div>
+  <button id="btn-run-untis-abgleich" disabled>Abgleichen</button>
+  <span id="untis-abgleich-status" class="status-msg"></span>
+  <progress id="untis-abgleich-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div class="table-scroll">
+    <table id="untis-abgleich-table">
+      <thead>
+        <tr>
+          <th>Schüler</th>
+          <th>Fach</th>
+          <th>Kurs laut Untis</th>
+          <th>Kurs laut Leistungsdaten</th>
+          <th>Hinweis</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  </details>
+
   <datalist id="kurs-datalist-anzahl"></datalist>
   <datalist id="kursart-datalist"></datalist>
 </section>
