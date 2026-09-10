@@ -367,17 +367,28 @@
     <table id="blockung-abgleich-table">
       <thead>
         <tr>
+          <th><input type="checkbox" id="blockung-abgleich-select-all" /></th>
           <th>Schüler</th>
           <th>Fach</th>
           <th>Kursart</th>
           <th>Kurs laut Blockung</th>
           <th>Kurs laut Leistungsdaten</th>
           <th>Hinweis</th>
+          <th>Aktion</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
   </div>
+  <p class="hint">
+    "Übernehmen" trägt den laut Blockung erwarteten Kurs in die Leistungsdaten ein – ist bereits ein
+    (falscher) Eintrag zu Fach/Kursart vorhanden, wird bei diesem nur die Kurszuordnung korrigiert, sonst
+    wird ein neuer Eintrag angelegt. Nur möglich, wenn sich der Zielkurs im Kurskatalog eindeutig
+    bestimmen lässt (nicht bei "unsicher"-Treffern mit mehreren gleich passenden Kursen ohne
+    unterscheidbare Kursnummer) – solche Zeilen bitte von Hand in Schild3 nachtragen.
+  </p>
+  <button id="btn-apply-blockung-abgleich-selected" disabled>Ausgewählte übernehmen</button>
+  <div id="blockung-abgleich-log" class="log"></div>
 
   </details>
 

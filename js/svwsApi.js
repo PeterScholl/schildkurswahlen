@@ -224,6 +224,15 @@
     return request("POST", "/schueler/leistungsdaten/create", einzelDatensatz);
   }
 
+  /** Patcht einzelne Felder eines bestehenden Leistungsdaten-Eintrags (Merge-Patch nach RFC 7386) - z.B.
+   *  um bei "Blockung mit Leistungsdaten abgleichen" (wartung.html) "Übernehmen" die Kurszuordnung zu
+   *  korrigieren, ohne den Eintrag zu löschen und neu anzulegen (das schlägt serverseitig mit HTTP 409
+   *  fehl, solange zum selben Fach/Lernabschnitt noch ein anderer Eintrag existiert - siehe Fehlerbehebung
+   *  in README.md). Läuft im normalen Server-Modus (anders als DELETE /kurse/delete/multiple). */
+  async function patchLeistungsdaten(id, patch) {
+    return request("PATCH", `/schueler/leistungsdaten/${id}`, patch);
+  }
+
   /** Löscht mehrere Leistungsdaten anhand ihrer IDs, gibt die gelöschten Datensätze zurück. */
   async function deleteLeistungsdatenMultiple(ids) {
     return request("DELETE", "/schueler/leistungsdaten/delete/multiple", ids);
@@ -305,6 +314,7 @@
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,
+    patchLeistungsdaten,
     deleteLeistungsdatenMultiple,
     deleteKurseMultiple,
     patchKurs,

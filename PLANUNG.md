@@ -113,6 +113,33 @@ Lehrer-Katalog (`SvwsApi.getLehrer()`, neu) für einen Lehrer-Kürzel-Abgleich h
 Lehrer-Namen direkt mit, echte Kurse nur IDs). Beide Signale lösen nur bei tatsächlicher Abweichung einen
 Hinweis aus, nie bei fehlender Bestimmbarkeit (kein Kürzel-Suffix bzw. kein ladbarer Katalog).
 
+**Nachtrag 2 (September 2026):** Auf Nachfrage einen "Übernehmen"-Button ergänzt, der pro Ergebniszeile
+(und per Checkbox-Auswahl auch für mehrere/alle in einem Rutsch) den laut Blockung erwarteten Kurs direkt
+in die Leistungsdaten einträgt (ersetzt dabei einen ggf. vorhandenen falschen Eintrag). Der dafür nötige
+*echte* Zielkurs wird - anders als beim reinen Anzeigen - über den kompletten Kurskatalog (nicht nur die
+Kurse der/des Schülerin/Schülers) per Fach+Kursart(+Kursnummer) aufgelöst, da im "fehlt"-Fall noch gar kein
+eigener Kurs existiert, an dem man sich orientieren könnte. Nicht eindeutig auflösbare ("unsicher")
+Zeilen bekommen bewusst keinen Button, bleiben zur manuellen Prüfung stehen. Wiederverwendet dafür die
+bereits vorhandene Split-Infrastruktur (`buildSplitLeistungsdatenPayload()`, `batchWithBisection()`,
+`createLeistungsdatenMultiple()`/`deleteLeistungsdatenMultiple()`) - daher trotz Umfang kein grundlegend
+neuer Mechanismus.
+
+**Nachtrag 3 (September 2026):** Mit echten Daten getestet - bei "fehlt"-Zeilen suchte die
+Zielkurs-Bestimmung anfangs im *kompletten* Kurskatalog des Schuljahresabschnitts (alle Jahrgänge), was
+z.B. bei "Sport GK" zu unplausibel vielen (14) Kandidaten führte, obwohl in der eigenen Stufe nur wenige
+infrage kommen. Fix: zusätzliche Einschränkung auf den echten Schild-Jahrgang der/des Schülerin/Schülers
+(`schueler.idJahrgang` gegen `KursDaten.idJahrgaenge`), siehe Fehlerbehebung 13 in README.md.
+
+**Nachtrag 4 (September 2026):** "Übernehmen" bei "abweichender Kurs" schlug real mit HTTP 409 fehl. Erste
+(unbestätigte) Vermutung: Unique-Constraint durch die "neu anlegen, dann alten löschen"-Reihenfolge - Fix:
+`SvwsApi.patchLeistungsdaten()` (`PATCH /schueler/leistungsdaten/{id}`) statt Ersetzen. Beim erneuten Test
+schlug aber auch das PATCH mit 409 fehl, was die Unique-Constraint-These widerlegte. Diesmal im
+SVWS-Server-Quellcode nachvollzogen (öffentliches Repo, `git clone --sparse`): Der eigentliche Fehler lag
+im mitgeschickten `kursart`-Feld (allgemeine Kursart "GK" statt der dort erwarteten spezifischen Kürzel
+wie "GKM"/"AB3"/"AB4") sowie einem zusätzlichen `fachID`-Feld, das serverseitig `Kurs_ID` wieder auf `null`
+zurücksetzt. Fix: Patch/Create-Payload schicken jetzt nur noch `kursID` (+ `wochenstunden`/bei Neuanlage
+`fachID`) - der Server leitet Kursart und Fachlehrer selbst her. Siehe Fehlerbehebung 14+15 in README.md.
+
 ### 5. Neues `js/sharedCode.js` für echte Code-Duplikate zwischen app.js und wartung.js
 
 Umgesetzt (September 2026), auf Nachfrage: `js/app.js` und `js/wartung.js` hatten rund 19 gleichnamige

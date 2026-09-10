@@ -301,7 +301,18 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller fü
   gäbe es bei Fächern ohne Parallelkurs ständig falschen Alarm). Über die Checkbox **"Auch Kurse zeigen,
   die nur in den Leistungsdaten stehen …"** lässt sich optional auch die umgekehrte Richtung mit anzeigen
   (kann bei Kursen außerhalb der Blockung, z.B. Sport/Religion, mehr Rauschen erzeugen, deshalb
-  standardmäßig aus). Rein lesende Prüfung ohne Lösch-/Änderungsfunktion.
+  standardmäßig aus).
+
+  Jede Ergebniszeile vom Typ "fehlt in Leistungsdaten" oder "abweichender Kurs" hat, sofern sich der laut
+  Blockung erwartete Kurs im Kurskatalog eindeutig bestimmen lässt, einen Button **"Übernehmen"**, der genau
+  diese eine Zuordnung in die Leistungsdaten einträgt; per Checkboxen (Spaltenkopf-Checkbox wählt alle
+  anwendbaren Zeilen) und **"Ausgewählte übernehmen"** geht das auch für mehrere/alle Zeilen in einem
+  Rutsch. Ist bereits ein (falscher) Eintrag zu Fach/Kursart vorhanden, wird bei diesem nur die
+  Kurszuordnung korrigiert (`PATCH`, der Eintrag selbst bleibt erhalten); sonst wird ein neuer Eintrag
+  angelegt. Nicht anwendbar (kein Button, nur ein Hinweistext) sind "unsicher"-Zeilen, bei denen auch der
+  komplette Kurskatalog keine eindeutige Kursnummer-Zuordnung liefert – die bleiben zur manuellen Prüfung
+  stehen. Erfolgreich übernommene Zeilen verschwinden aus der Ergebnisliste; fehlgeschlagene bleiben mit
+  entsprechendem Protokoll-Hinweis stehen.
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -541,6 +552,58 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
     `schuelerById` gefunden werden, jetzt komplett (kein Leistungsdaten-Abgleich, keine Meldungen für sie)
     und zählt sie im Abschluss-Status als "nicht im aktuell geladenen Status-Filter enthalten".
 
+13. **"Übernehmen" (siehe oben) meldete bei einem realen "SP-GK4 fehlt"-Fall "14 passende Kurse im
+    Kurskatalog, keine eindeutige Kursnummer-Zuordnung möglich"** - für eine einzelne Jahrgangsstufe
+    (Q1) unplausibel viele Sport-GK-Kurse.
+    Ursache: `resolveZielkurs()` durchsuchte den *kompletten* `kursById`-Katalog des aktuellen
+    Schuljahresabschnitts nach Fach+Kursart, ohne nach Jahrgang einzuschränken - Sport-GK-Kurse existieren
+    aber in EF, Q1 *und* Q2 gleichzeitig (plus ggf. mehrere Parallelgruppen je Jahrgang), sodass dort
+    leicht ein Dutzend+ Kandidaten zusammenkommen, obwohl in der Stufe selbst nur eine Handvoll infrage
+    kommt.
+    **Fix:** `resolveZielkurs()`/`buildApplyInfo()` bekommen jetzt zusätzlich `jahrgangIds` übergeben -
+    die echte Schild-Jahrgangs-ID der/des Schülerin/Schülers (`schueler.idJahrgang`, aus der bereits
+    geladenen Schülerliste, nicht aus der Gost-Stufenauswahl selbst hergeleitet). Die Kandidatenliste wird
+    zuerst darauf eingeschränkt (`KursDaten.idJahrgaenge.includes(...)`), nur wenn das *alle* Kandidaten
+    wegfiltern würde (z.B. `idJahrgaenge` auf einem Kurs nicht gepflegt), wird ungefiltert weitergesucht.
+
+14. **"Übernehmen" bei "abweichender Kurs" schlug mit HTTP 409 (Conflict) fehl** - im Netzwerk-Log leerer
+    Response-Body, daher ohne eigene Server-Fehlermeldung erkennbar; in der Swagger-UI ist bei
+    `POST .../create/multiple` kein 409 dokumentiert (nur 201/403/404/500).
+    Ursache *vermutet* (zu diesem Zeitpunkt ohne Quellcode-Einsicht, nur aus dem HTTP-Statuscode
+    geschlossen): Die erste Fassung legte den neuen Leistungsdaten-Eintrag zuerst an (`POST
+    .../leistungsdaten/create/multiple`) und löschte danach den alten. Vermutung: Der Server lässt pro
+    Fach/Lernabschnitt nur einen Eintrag zu (DB-Unique-Constraint), das Anlegen schlägt fehl, solange der
+    alte noch existiert. **Diese Vermutung erwies sich als unvollständig** (siehe Fehlerbehebung 15 - der
+    echte Fehler lag am Payload-Inhalt, nicht an der Reihenfolge) - nachträglich per Quellcode korrigiert.
+    **Fix (Zwischenstand):** Für "abweichender Kurs" wird seitdem statt "anlegen + löschen" die neue
+    Funktion `SvwsApi.patchLeistungsdaten(id, patch)` (`PATCH /schueler/leistungsdaten/{id}`) genutzt -
+    ändert den *bestehenden* Eintrag per Merge-Patch, statt einen neuen anzulegen. Architektonisch sinnvoll
+    unabhängig von der (unvollständigen) Ursachenvermutung, hat den eigentlichen Fehler aber noch nicht
+    behoben - siehe Fehlerbehebung 15.
+
+15. **PATCH aus Fehlerbehebung 14 schlug beim erneuten Testen weiterhin mit HTTP 409 fehl**, obwohl dabei
+    gar kein zweiter Eintrag angelegt wird - das widerlegte die dortige Unique-Constraint-Vermutung.
+    Auf Nachfrage, wie die Diagnose zustande kam: dieses Mal **im SVWS-Server-Quellcode nachvollzogen**
+    (öffentliches Repository, `git clone --sparse` ohne Login, `DataSchuelerLeistungsdaten.java`) statt nur
+    vermutet. Zwei echte Fehler im Patch-/Create-Payload gefunden:
+    - Das mitgeschickte Feld `kursart` (z.B. `"GK"`, aus `KursDaten.kursartAllg` - der *allgemeinen*
+      Kursart) wird serverseitig (`mapAttribute()`, Fall `"kursart"`) gegen den Katalog *spezifischer*
+      Kursart-Kürzel geprüft (`ZulaessigeKursart`, z.B. `GKM`/`GKS`/`AB3`/`AB4`/`LK1`/`LK2`) - `"GK"` ist
+      dort kein gültiger Wert, `getWertByKuerzel()` liefert `null` → `throw new
+      ApiOperationException(Status.CONFLICT)`. Das erklärt vermutlich auch den *ursprünglichen* 409 aus
+      Fehlerbehebung 14, dessen Payload denselben `kursart`-Wert enthielt - die Unique-Constraint-These dort
+      war also wahrscheinlich unnötig, der eigentliche Fehler lag vermutlich von Anfang an hier.
+    - Ein zusätzlich mitgeschicktes Feld `fachID` setzt im selben Fall (`mapAttribute()`, Fall `"fachID"`)
+      serverseitig `Kurs_ID` bedingungslos auf `null` zurück - hätte die kurz zuvor im selben Patch gesetzte
+      `kursID` also wieder zunichtegemacht, selbst wenn sich das Fach gar nicht ändert.
+    Wichtige Erkenntnis dabei: Ein reines Patchen von `kursID` (`mapKursID()`) leitet die passende
+    *spezifische* Kursart automatisch her (inkl. Sonderfällen wie GK → GKM/AB3/AB4 je nach Abiturfach, das
+    der Client gar nicht kennt) und übernimmt den Fachlehrer direkt vom Kurs - beides muss der Client also
+    gar nicht selbst mitschicken.
+    **Fix:** `buildKurswechselPatch()` und `buildNeueLeistungsdatenPayload()` (`js/wartung.js`) schicken
+    jetzt nur noch `kursID` (+ `wochenstunden`, bei Neuanlage zusätzlich das dort ohnehin pflichtige
+    `fachID`) - kein `kursart`, kein `lehrerID` mehr.
+
 ## Programmstruktur
 
 ```text
@@ -604,6 +667,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `createKurs(kursDaten)` | `POST /kurse/create` | Legt einen neuen Kurs an, gibt ihn inkl. neuer ID zurück |
 | `getLernabschnittsdaten(schuelerId, abschnittId)` | `GET /schueler/{id}/abschnitt/{id}/lernabschnittsdaten` | Liefert `lernabschnittID` + vorhandene `leistungsdaten[]` (für Duplikat-Check) |
 | `createLeistungsdatenMultiple(list)` | `POST /schueler/leistungsdaten/create/multiple` | Legt neue Leistungsdaten-Einträge an (Batch) |
+| `patchLeistungsdaten(id, patch)` | `PATCH /schueler/leistungsdaten/{id}` | Ändert einzelne Felder eines bestehenden Leistungsdaten-Eintrags (Merge-Patch nach RFC 7386, z.B. `{kursID: ...}`) - "Blockung mit Leistungsdaten abgleichen" → "Übernehmen" (wartung.html) nutzt das, um die Kurszuordnung zu korrigieren, ohne den Eintrag zu löschen und neu anzulegen |
 | `deleteLeistungsdatenMultiple(ids)` | `DELETE /schueler/leistungsdaten/delete/multiple` | Löscht Leistungsdaten-Einträge anhand ihrer IDs (Batch; index.html Schritt 8 sowie mehrere wartung.html-Bausteine) |
 | `deleteKurseMultiple(ids)` | `DELETE /kurse/delete/multiple` | Löscht Kurse anhand ihrer IDs, antwortet pro Kurs einzeln mit `{id, success, log[]}` (wartung.html "Leere Kurse suchen") – Stand Juli 2026 serverseitig auf den Server-Entwicklungsmodus beschränkt, siehe Hinweis dort |
 | `patchKurs(id, patch)` | `PATCH /kurse/{id}` | Ändert einzelne Felder eines Kurses (Merge-Patch nach RFC 7386, z.B. `{sortierung: 0}`) – anders als das Löschen im normalen Server-Modus nutzbar |
@@ -937,7 +1001,43 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   die reine ID zurück, falls dort nicht gefunden; `blockungsKursId`s werden dafür nie verwendet.
   Schüler:innen, die nicht in `schuelerById` gefunden werden (nicht im aktuell geladenen Status-Filter,
   z.B. längst ausgeschieden - siehe Fehlerbehebung 12), werden komplett übersprungen statt fälschlich
-  "fehlt überall" zu melden. Rein lesend, keine Lösch-/Änderungsfunktion.
+  "fehlt überall" zu melden.
+
+  **"Übernehmen"** (September 2026, auf Nachfrage): Jede "fehlt"/"abweichend"-Zeile bekommt beim Bauen
+  bereits ein `apply`-Objekt mitgegeben
+  (`buildApplyInfo(lad, quellEintrag, fachID, kursart, erwartetNummer, jahrgangIds)` - `quellEintrag` ist
+  dabei `null` im "fehlt"-Fall, sonst der bereits vorhandene, zu ersetzende Leistungsdaten-Eintrag).
+  `buildApplyInfo()` löst per `resolveZielkurs(fachID, kursart, erwartetNummer, jahrgangIds)` den laut
+  Blockung gemeinten *echten* Kurs im `kursById`-Katalog auf (nicht nur unter den Kursen der/des
+  Schülerin/Schülers - wichtig gerade für den "fehlt"-Fall, wo es davon keine gibt), zunächst eingeschränkt
+  auf `jahrgangIds` (die echte Schild-Jahrgangs-ID der/des Schülerin/Schülers, `schueler.idJahrgang`,
+  verglichen mit `KursDaten.idJahrgaenge`) - **wichtig**, sonst landen z.B. bei "Sport GK" leicht ein
+  Dutzend+ Kurse aus *allen* Jahrgängen der Schule im Kandidatenkreis, obwohl in der eigenen Stufe oft nur
+  eine Handvoll paralleler Kurse existiert (reale Beobachtung: 14 statt der paar tatsächlich in Frage
+  kommenden). Nur wirksam, wenn dadurch nicht plötzlich gar keine Kandidaten mehr übrig sind (z.B. falls
+  `idJahrgaenge` auf einem Kurs nicht gepflegt ist) - dann wird ungefiltert weitergesucht. Eindeutig, wenn
+  danach nur ein Fach/Kursart-Treffer übrig bleibt oder die Kursnummer die übrigen ausschließt, sonst
+  liefert es nur einen Grund-Text (keine automatische Übernahme möglich). Ist der Zielkurs eindeutig und
+  es gibt bereits einen `quellEintrag` (Fach schon in den Leistungsdaten, nur der falsche Kurs), liefert
+  `buildApplyInfo()` `patchPayload`/`leistungsdatenId`: `buildKurswechselPatch(zielkurs)` baut daraus einen
+  *bewusst minimalen* Merge-Patch (nur `kursID` + `wochenstunden` - **nicht** `fachID`/`kursart`/`lehrerID`,
+  siehe Fehlerbehebung 15: der Server leitet beim Patchen von `kursID` die passende Kursart und den
+  Fachlehrer selbst her, ein eigenes `kursart`-Feld läuft dort ins Leere). **Bewusst kein "löschen + neu
+  anlegen"**: Ein neuer Eintrag lässt sich serverseitig mit HTTP 409 nicht anlegen, solange zum selben
+  Fach/Lernabschnitt noch der alte existiert (siehe Fehlerbehebung 14) - PATCH ändert den bestehenden
+  Eintrag dagegen atomar (Noten-/Zeugnis-Felder bleiben dabei unverändert). Fehlt der Eintrag ganz, liefert
+  `buildApplyInfo()` stattdessen `createPayload` über das neue
+  `buildNeueLeistungsdatenPayload(lernabschnittID, zielkurs)` (ebenfalls ohne `kursart`/`lehrerID`, aus
+  demselben Grund - `fachID` bleibt, da beim Anlegen Pflichtfeld). `renderBlockungAbgleichTable()` zeigt bei anwendbaren
+  Zeilen (`patchPayload` oder `createPayload` vorhanden) eine Checkbox plus Button "Übernehmen" (sonst nur
+  den Grund-Text als Hinweis). `applyBlockungAbgleichRows(rows)` führt die eigentliche Übernahme für eine
+  oder mehrere Zeilen aus: PATCH-Zeilen einzeln, konkurrenzbegrenzt über `mapWithConcurrency()` (die API
+  bietet dafür kein Batch-PATCH), Anlege-Zeilen gebündelt über `batchWithBisection()` +
+  `SvwsApi.createLeistungsdatenMultiple()`; nur erfolgreiche Zeilen werden aus `blockungAbgleichResults`
+  entfernt, fehlgeschlagene bleiben mit Protokoll-Hinweis stehen.
+  `onApplyBlockungAbgleichSelected()`/`onApplyBlockungAbgleichSingle(evt)` sind die Checkbox-Auswahl- bzw.
+  Einzelzeilen-Wrapper (beide mit `confirm()`-Sicherheitsabfrage), `onBlockungAbgleichSelectAll(evt)` die
+  Spaltenkopf-Checkbox - alle drei demselben Muster wie z.B. bei "Leere Kurse suchen" folgend.
 
 `onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
 `js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`

@@ -1865,6 +1865,110 @@
     $("btn-run-blockung-abgleich").disabled = false;
   }
 
+  /** Sucht im kompletten (nicht nur dem der/dem Schüler:in zugeordneten) Kurskatalog `kursById` den
+   *  laut Blockung vorgesehenen echten Kurs zu Fach/Kursart/Kursnummer - nötig, um "Übernehmen"-Vorschläge
+   *  zu machen (die Blockungs-Kurs-ID selbst lässt sich dafür wie überall in diesem Abschnitt NICHT
+   *  verwenden, siehe Kommentar oben). `jahrgangIds` (die echte(n) Schild-Jahrgangs-ID der/des
+   *  Schülerin/Schülers, siehe `KursDaten.idJahrgaenge`) schränkt die Kandidaten zuerst auf den eigenen
+   *  Jahrgang ein - ohne das landen z.B. bei "Sport GK" leicht ein Dutzend+ Kurse aus allen Jahrgängen der
+   *  Schule im Kandidatenkreis. Nur wirksam, wenn dadurch nicht plötzlich gar keine Kandidaten mehr übrig
+   *  sind (z.B. falls `idJahrgaenge` auf einem Kurs nicht gepflegt ist) - dann wird ungefiltert weitergesucht.
+   *  Eindeutig, wenn danach nur ein Kurs zu Fach+Kursart übrig bleibt oder die Kursnummer die übrigen
+   *  ausschließt - sonst nicht automatisch anwendbar. */
+  function resolveZielkurs(fachID, kursart, erwartetNummer, jahrgangIds) {
+    let kandidaten = Array.from(kursById.values()).filter((k) => k.idFach === fachID && k.kursartAllg === kursart);
+    let nachJahrgangEingeschraenkt = false;
+    if (jahrgangIds && jahrgangIds.length > 0) {
+      const gefiltert = kandidaten.filter((k) => (k.idJahrgaenge || []).some((id) => jahrgangIds.includes(id)));
+      if (gefiltert.length > 0) {
+        kandidaten = gefiltert;
+        nachJahrgangEingeschraenkt = true;
+      }
+    }
+    if (kandidaten.length === 0) return { grund: "kein passender Kurs im Kurskatalog gefunden" };
+    if (kandidaten.length === 1) return { kurs: kandidaten[0] };
+    if (erwartetNummer != null) {
+      const treffer = kandidaten.filter((k) => parseKursnummerAusKuerzel(k.kuerzel) === erwartetNummer);
+      if (treffer.length === 1) return { kurs: treffer[0] };
+    }
+    return {
+      grund: `${kandidaten.length} passende Kurse im Kurskatalog${
+        nachJahrgangEingeschraenkt ? " im selben Jahrgang" : ""
+      }, keine eindeutige Kursnummer-Zuordnung möglich`,
+    };
+  }
+
+  /** Payload für eine komplett neue Leistungsdaten-Zeile (Fach fehlt bislang ganz) - Pendant zu
+   *  `buildSplitLeistungsdatenPayload()` oben, das immer einen bestehenden Eintrag als Vorlage braucht.
+   *  Sinnvolle Vorbelegung statt Übernahme aus einer Vorlage, da es keine gibt. Bewusst OHNE
+   *  `kursart`/`lehrerID` - `POST .../create/multiple` durchläuft serverseitig dieselbe
+   *  Attribut-Zuordnung wie PATCH (`DataManagerRevised.addBasic()` → `applyPatchMappings()` →
+   *  `DataSchuelerLeistungsdaten.mapAttribute()`), inkl. desselben `kursart`-Bugs (siehe
+   *  `buildKurswechselPatch()` oben bzw. Fehlerbehebung 15 in README.md) - `kursID` reicht aus, der Server
+   *  leitet die passende Kursart und den Fachlehrer daraus selbst her. `fachID` bleibt drin, weil es beim
+   *  Anlegen Pflichtfeld ist (`setAttributesRequiredOnCreation("lernabschnittID", "fachID")`). */
+  function buildNeueLeistungsdatenPayload(lernabschnittID, zielkurs) {
+    return {
+      lernabschnittID,
+      fachID: zielkurs.idFach,
+      kursID: zielkurs.id,
+      wochenstunden: zielkurs.wochenstunden ?? 0,
+      aufZeugnis: true,
+      istEpochal: !!zielkurs.istEpochalunterricht,
+      umfangLernstandsbericht: "V",
+      textFachbezogeneLernentwicklung: "",
+      note: null,
+      noteQuartal: null,
+    };
+  }
+
+  /** Patch-Payload, um einen *bestehenden* Leistungsdaten-Eintrag auf den laut Blockung richtigen Kurs
+   *  umzubiegen. Bewusst NUR `kursID` (+ `wochenstunden`) - NICHT `fachID`/`kursart`/`lehrerID`, siehe
+   *  Fehlerbehebung 15 in README.md (im SVWS-Server-Quellcode nachvollzogen,
+   *  `DataSchuelerLeistungsdaten.mapAttribute()`/`mapKursID()`):
+   *  - Ein PATCH von `kursID` leitet serverseitig automatisch die dazu passende *spezifische* Kursart her
+   *    (inkl. Sonderfällen wie GK -> GKM/AB3/AB4 je nach Abiturfach der/des Schülerin/Schülers, das der
+   *    Client dafür gar nicht kennt) und übernimmt den Fachlehrer direkt vom Kurs - beides müsste man sonst
+   *    client-seitig nachbilden.
+   *  - Ein eigenes `kursart`-Feld im Patch würde dagegen unseren Wert (die *allgemeine* Kursart, z.B. "GK")
+   *    gegen den dort erwarteten Katalog *spezifischer* Kürzel (z.B. "GKM"/"AB3"/"AB4"/"LK1"/"LK2") prüfen -
+   *    "GK" ist dort kein gültiger Wert, die Prüfung schlägt fehl -> HTTP 409.
+   *  - Ein zusätzliches `fachID`-Feld setzt serverseitig sogar `Kurs_ID` zurück auf `null`, selbst wenn sich
+   *    das Fach gar nicht ändert - würde also die kurz zuvor im selben Patch gesetzte `kursID` wieder
+   *    zunichtemachen. */
+  function buildKurswechselPatch(zielkurs) {
+    return {
+      kursID: zielkurs.id,
+      wochenstunden: zielkurs.wochenstunden ?? 0,
+    };
+  }
+
+  /** Baut die "Übernehmen"-Information für eine Abgleich-Ergebniszeile: welcher echte Kurs laut Blockung
+   *  gemeint ist und die fertige API-Aktion dafür - abhängig davon, ob es bereits einen (falschen)
+   *  Leistungsdaten-Eintrag gibt (`patchPayload`, ändert nur die Kurszuordnung am bestehenden Eintrag) oder
+   *  der Eintrag ganz neu angelegt wird (`createPayload`). WICHTIG: Ein bestehender Eintrag wird bewusst
+   *  per PATCH umgebogen statt gelöscht + neu angelegt - Löschen+Anlegen schlägt serverseitig mit HTTP 409
+   *  fehl, weil der neue Eintrag (gleiches Fach/Lernabschnitt) angelegt würde, solange der alte noch
+   *  existiert (siehe Fehlerbehebung 14 in README.md). `undefined`/keine der beiden Payload-Varianten, wenn
+   *  der Zielkurs nicht eindeutig bestimmbar ist oder bereits genau der eingetragene Kurs ist (nichts zu
+   *  tun). */
+  function buildApplyInfo(lad, quellEintrag, fachID, kursart, erwartetNummer, jahrgangIds) {
+    const { kurs: zielkurs, grund } = resolveZielkurs(fachID, kursart, erwartetNummer, jahrgangIds);
+    if (!zielkurs) return { grund: grund || "Zielkurs nicht eindeutig bestimmbar" };
+    if (quellEintrag && quellEintrag.kursID === zielkurs.id) return { grund: "kein Unterschied zum bereits eingetragenen Kurs" };
+    if (quellEintrag) {
+      return {
+        zielkursLabel: kursLabel(zielkurs),
+        leistungsdatenId: quellEintrag.id,
+        patchPayload: buildKurswechselPatch(zielkurs),
+      };
+    }
+    return {
+      zielkursLabel: kursLabel(zielkurs),
+      createPayload: buildNeueLeistungsdatenPayload(lad.lernabschnittID, zielkurs),
+    };
+  }
+
   async function onRunBlockungAbgleich() {
     const statusEl = $("blockung-abgleich-status");
     const blockung = gostBlockungen[Number($("blockung-abgleich-blockung").value)];
@@ -1975,6 +2079,11 @@
         }
         const label = schuelerLabel(schueler);
         const lad = await SvwsApi.getLernabschnittsdaten(schuelerId, abschnittId);
+        // Für "Übernehmen": schränkt resolveZielkurs() unten auf Kurse desselben (echten Schild-)Jahrgangs
+        // der/des Schülerin/Schülers ein - ohne das landen z.B. bei "Sport GK" leicht ein Dutzend+ Kurse aus
+        // allen Jahrgängen der Schule im Kandidatenkreis, obwohl in der eigenen Stufe oft nur eine
+        // Handvoll paralleler Kurse existiert (siehe Fehlerbehebung unten).
+        const jahrgangIds = schueler.idJahrgang != null ? [schueler.idJahrgang] : [];
 
         // Fach/Kursart für den Vergleich kommen aus dem bereits geladenen Kurskatalog (kursById), NICHT
         // aus den Feldern fachID/kursart auf dem Leistungsdaten-Datensatz selbst (siehe Fehlerbehebung
@@ -2004,12 +2113,15 @@
 
           if (kandidaten.length === 0) {
             results.push({
+              schuelerId,
+              fachID: erwartet.fachID,
               schuelerLabel: label,
               fachLabel: fachLabel(erwartet.fachID),
               kursart: erwartet.kursart,
               kursBlockung: blockungsKursLabel(erwartet.kursId),
               kursLeistungsdaten: "– (fehlt)",
               hinweis: "fehlt in Leistungsdaten",
+              apply: buildApplyInfo(lad, null, erwartet.fachID, erwartet.kursart, erwartetNummer, jahrgangIds),
             });
             continue;
           }
@@ -2032,13 +2144,17 @@
           } else {
             const bestGuess = kandidaten[0];
             alsErsatzVerwendeteKursIds.add(bestGuess);
+            const quellEintragBestGuess = (lad.leistungsdaten || []).find((l) => l.kursID === bestGuess);
             results.push({
+              schuelerId,
+              fachID: erwartet.fachID,
               schuelerLabel: label,
               fachLabel: fachLabel(erwartet.fachID),
               kursart: erwartet.kursart,
               kursBlockung: blockungsKursLabel(erwartet.kursId),
               kursLeistungsdaten: `${kursLabelOrId(bestGuess)} (unsicher – ${kandidaten.length} passende Kurse, Kursnummer nicht eindeutig zuordenbar)`,
               hinweis: "abweichender Kurs",
+              apply: buildApplyInfo(lad, quellEintragBestGuess, erwartet.fachID, erwartet.kursart, erwartetNummer, jahrgangIds),
             });
             continue;
           }
@@ -2079,13 +2195,17 @@
             }
 
             if (abweichungen.length > 0) {
+              const quellEintragGewaehlt = (lad.leistungsdaten || []).find((l) => l.kursID === gewaehlterKandidat);
               results.push({
+                schuelerId,
+                fachID: erwartet.fachID,
                 schuelerLabel: label,
                 fachLabel: fachLabel(erwartet.fachID),
                 kursart: erwartet.kursart,
                 kursBlockung: blockungsKursLabel(erwartet.kursId),
                 kursLeistungsdaten: kursLabelOrId(gewaehlterKandidat),
                 hinweis: `abweichender Kurs (${abweichungen.join("; ")})`,
+                apply: buildApplyInfo(lad, quellEintragGewaehlt, erwartet.fachID, erwartet.kursart, erwartetNummer, jahrgangIds),
               });
             }
           }
@@ -2133,18 +2253,115 @@
   function renderBlockungAbgleichTable() {
     const tbody = document.querySelector("#blockung-abgleich-table tbody");
     tbody.innerHTML = blockungAbgleichResults
-      .map(
-        (r) => `
+      .map((r, idx) => {
+        const anwendbar = !!(r.apply && (r.apply.createPayload || r.apply.patchPayload));
+        return `
       <tr>
+        <td>${anwendbar ? `<input type="checkbox" class="blockung-abgleich-row" data-idx="${idx}" checked />` : ""}</td>
         <td>${escapeHtml(r.schuelerLabel)}</td>
         <td>${escapeHtml(r.fachLabel)}</td>
         <td>${escapeHtml(r.kursart)}</td>
         <td>${escapeHtml(r.kursBlockung)}</td>
         <td>${escapeHtml(r.kursLeistungsdaten)}</td>
         <td>${escapeHtml(r.hinweis)}</td>
-      </tr>`
-      )
+        <td>${
+          anwendbar
+            ? `→ ${escapeHtml(r.apply.zielkursLabel)} ` +
+              `<button type="button" class="btn-secondary blockung-abgleich-apply-single" data-idx="${idx}">Übernehmen</button>`
+            : `<span class="hint">${escapeHtml((r.apply && r.apply.grund) || "nicht automatisch anwendbar")}</span>`
+        }</td>
+      </tr>`;
+      })
       .join("");
+    const anzahlAnwendbar = blockungAbgleichResults.filter((r) => r.apply && (r.apply.createPayload || r.apply.patchPayload)).length;
+    $("blockung-abgleich-select-all").checked = anzahlAnwendbar > 0;
+    $("btn-apply-blockung-abgleich-selected").disabled = anzahlAnwendbar === 0;
+  }
+
+  function onBlockungAbgleichSelectAll(evt) {
+    document.querySelectorAll(".blockung-abgleich-row").forEach((cb) => (cb.checked = evt.target.checked));
+  }
+
+  /** Führt "Übernehmen" für die übergebenen Ergebniszeilen aus - zwei Fälle:
+   *  - **"abweichender Kurs"**: bestehenden Leistungsdaten-Eintrag per `SvwsApi.patchLeistungsdaten()`
+   *    (konkurrenzbegrenzt über `mapWithConcurrency`, da die API kein Batch-PATCH anbietet) auf den
+   *    richtigen Kurs umbiegen. Bewusst kein "löschen + neu anlegen": das schlägt serverseitig mit
+   *    HTTP 409 fehl, weil der Server offenbar nur einen Leistungsdaten-Eintrag pro Fach/Lernabschnitt
+   *    zulässt und das Anlegen des neuen Eintrags fehlschlägt, solange der alte (gleiches Fach) noch
+   *    existiert - siehe Fehlerbehebung 14 in README.md.
+   *  - **"fehlt in Leistungsdaten"**: es gibt noch keinen Eintrag zu diesem Fach, hier bleibt es beim
+   *    Anlegen (`SvwsApi.createLeistungsdatenMultiple()`, per `batchWithBisection` konkurrenzsicher).
+   *  Nur erfolgreiche Zeilen werden aus `blockungAbgleichResults` entfernt, fehlgeschlagene bleiben mit
+   *  Protokoll-Hinweis stehen. */
+  async function applyBlockungAbgleichRows(rows) {
+    const anwendbar = rows.filter((r) => r.apply && (r.apply.createPayload || r.apply.patchPayload));
+    if (anwendbar.length === 0) return;
+
+    const log = $("blockung-abgleich-log");
+    const statusEl = $("blockung-abgleich-status");
+    log.textContent = `Übernehme ${anwendbar.length} Kurszuordnung(en) …\n`;
+    $("btn-apply-blockung-abgleich-selected").disabled = true;
+
+    const erfolgreich = new Set();
+
+    const zuPatchen = anwendbar.filter((r) => r.apply.patchPayload);
+    await mapWithConcurrency(zuPatchen, 6, async (r) => {
+      try {
+        await SvwsApi.patchLeistungsdaten(r.apply.leistungsdatenId, r.apply.patchPayload);
+        log.textContent += `- ${r.schuelerLabel} (${r.fachLabel}): → ${r.apply.zielkursLabel} übernommen.\n`;
+        erfolgreich.add(r);
+      } catch (err) {
+        log.textContent += `- ${r.schuelerLabel} (${r.fachLabel}): FEHLGESCHLAGEN – ${err.message}\n`;
+      }
+    });
+
+    const anzulegen = anwendbar.filter((r) => r.apply.createPayload);
+    const createResult = await batchWithBisection(anzulegen, (subset) =>
+      SvwsApi.createLeistungsdatenMultiple(subset.map((r) => r.apply.createPayload))
+    );
+    const createFehlgeschlagen = new Set(createResult.failed.map((f) => f.item));
+    for (const r of anzulegen) {
+      if (createFehlgeschlagen.has(r)) {
+        log.textContent += `- ${r.schuelerLabel} (${r.fachLabel}): Anlegen fehlgeschlagen.\n`;
+        continue;
+      }
+      log.textContent += `- ${r.schuelerLabel} (${r.fachLabel}): → ${r.apply.zielkursLabel} übernommen.\n`;
+      erfolgreich.add(r);
+    }
+    log.scrollTop = log.scrollHeight;
+
+    blockungAbgleichResults = blockungAbgleichResults.filter((r) => !erfolgreich.has(r));
+    renderBlockungAbgleichTable();
+
+    setStatus(
+      statusEl,
+      erfolgreich.size === anwendbar.length
+        ? `${erfolgreich.size} Kurszuordnung(en) übernommen.`
+        : `${erfolgreich.size} von ${anwendbar.length} übernommen, Rest siehe Protokoll unten.`,
+      erfolgreich.size === anwendbar.length ? "ok" : "warn"
+    );
+  }
+
+  async function onApplyBlockungAbgleichSelected() {
+    const checked = Array.from(document.querySelectorAll(".blockung-abgleich-row:checked"));
+    if (checked.length === 0) return;
+    const rows = checked.map((cb) => blockungAbgleichResults[Number(cb.dataset.idx)]).filter(Boolean);
+    const sicher = confirm(
+      `${rows.length} Kurszuordnung(en) laut Blockung in die Leistungsdaten übernehmen? Dabei wird ggf. die ` +
+        `Kurszuordnung bestehender (falscher) Einträge geändert.`
+    );
+    if (!sicher) return;
+    await applyBlockungAbgleichRows(rows);
+  }
+
+  async function onApplyBlockungAbgleichSingle(evt) {
+    const row = blockungAbgleichResults[Number(evt.target.dataset.idx)];
+    if (!row) return;
+    const sicher = confirm(
+      `Kurszuordnung für "${row.schuelerLabel}" (${row.fachLabel}) laut Blockung übernehmen (→ ${row.apply.zielkursLabel})?`
+    );
+    if (!sicher) return;
+    await applyBlockungAbgleichRows([row]);
   }
 
   // ---------- 4. Speichern / Laden ----------
@@ -2271,6 +2488,11 @@
 
     $("blockung-abgleich-stufe").addEventListener("change", onBlockungAbgleichStufeChange);
     $("btn-run-blockung-abgleich").addEventListener("click", onRunBlockungAbgleich);
+    $("blockung-abgleich-select-all").addEventListener("change", onBlockungAbgleichSelectAll);
+    $("btn-apply-blockung-abgleich-selected").addEventListener("click", onApplyBlockungAbgleichSelected);
+    document.querySelector("#blockung-abgleich-table").addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("blockung-abgleich-apply-single")) onApplyBlockungAbgleichSingle(evt);
+    });
 
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);
