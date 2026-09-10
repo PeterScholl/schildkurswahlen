@@ -61,6 +61,34 @@ header h1 { margin-bottom: 0.2rem; }
 
 .card h2 { margin-top: 0; }
 
+/* Ein-/ausklappbare Bausteine (z.B. wartung.html, Bereich "3. Wartung") - jeder Baustein ein natives
+   <details>, Überschrift als <summary> mit eigenem Pfeil-Indikator statt des Browser-Standardmarkers. */
+.wartung-baustein {
+  border-top: 1px solid var(--border);
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+}
+.wartung-baustein:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+.wartung-baustein > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.wartung-baustein > summary::-webkit-details-marker { display: none; }
+.wartung-baustein > summary::before {
+  content: "▸";
+  display: inline-block;
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.wartung-baustein[open] > summary::before { transform: rotate(90deg); }
+.wartung-baustein > summary h3 { margin: 0; }
+.wartung-baustein > summary:hover h3 { color: var(--accent); }
+
 .hidden { display: none !important; }
 
 .grid-form {

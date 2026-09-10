@@ -178,7 +178,9 @@ braucht jede Seite ihre eigene Verbindungseingabe).
 
 Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
 Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
-**3. Wartung** mit fünf Bausteinen:
+**3. Wartung** mit fünf Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
+`wartung-baustein` in `css/style.css`) – auf-/zuklappbar über einen Klick auf die Überschrift, standardmäßig
+eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller fünf Bausteine erschlägt:
 
 - **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr

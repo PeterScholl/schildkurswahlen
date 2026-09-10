@@ -72,7 +72,8 @@
   <button type="button" class="btn-secondary" id="btn-refresh-kursbelegung">Kursbelegung aktualisieren</button>
   <span id="kursbelegung-refresh-status" class="status-msg"></span>
 
-  <h3>Leistungsdaten mit leerem Kurs</h3>
+  <details class="wartung-baustein">
+  <summary><h3>Leistungsdaten mit leerem Kurs</h3></summary>
   <p class="hint">
     Findet Leistungsdaten-Einträge, die eine Kursart tragen (also ursprünglich einem Kurs zugeordnet
     waren), deren Kurs-Verknüpfung aber fehlt <em>oder</em> auf einen nicht mehr existierenden Kurs zeigt
@@ -114,7 +115,10 @@
   <button id="btn-delete-check-leerer-kurs" class="btn-danger" disabled>Ausgewählte löschen</button>
   <div id="check-leerer-kurs-log" class="log"></div>
 
-  <h3>Split in Jahrgangskurse</h3>
+  </details>
+
+  <details class="wartung-baustein">
+  <summary><h3>Split in Jahrgangskurse</h3></summary>
   <p class="hint">
     Verschiebt Schüler:innen eines Jahrgangs von einem Quellkurs in einen Zielkurs (z.B. um einen
     gemeinsam angelegten Kurs nachträglich nach Jahrgängen aufzuteilen). Quell- und Zielkurs müssen
@@ -181,7 +185,10 @@
   <progress id="split-jahrgang-progress" class="progress-bar hidden" value="0" max="100"></progress>
   <div id="split-jahrgang-log" class="log"></div>
 
-  <h3>Split in Klassenkurse</h3>
+  </details>
+
+  <details class="wartung-baustein">
+  <summary><h3>Split in Klassenkurse</h3></summary>
   <p class="hint">
     Wie "Split in Jahrgangskurse" oben, aber nach Klasse statt Jahrgang gruppiert – z.B. um einen gemeinsam
     angelegten Kurs klassenweise aufzuteilen. Quell- und Zielkurs müssen bereits existierende Kurse sein;
@@ -248,7 +255,10 @@
   <progress id="split-klasse-progress" class="progress-bar hidden" value="0" max="100"></progress>
   <div id="split-klasse-log" class="log"></div>
 
-  <h3>Leere Kurse suchen</h3>
+  </details>
+
+  <details class="wartung-baustein">
+  <summary><h3>Leere Kurse suchen</h3></summary>
   <p class="hint">
     Findet Kurse, denen aktuell keine Schüler:innen zugeordnet sind – basierend auf dem zuletzt geladenen
     Datenstand (Schritt 2 bzw. "Kursbelegung aktualisieren" oben), z.B. um Kurse aufzuspüren, die nach
@@ -310,7 +320,10 @@
   <button type="button" class="btn-secondary" id="btn-leere-kurse-sortierung-null" disabled>Ausgewählte mit Sortierung 0 versehen</button>
   <div id="leere-kurse-log" class="log"></div>
 
-  <h3>Blockung mit Leistungsdaten abgleichen</h3>
+  </details>
+
+  <details class="wartung-baustein">
+  <summary><h3>Blockung mit Leistungsdaten abgleichen</h3></summary>
   <p class="hint">
     Vergleicht die Kurszuordnung einer Blockung der gymnasialen Oberstufe mit den tatsächlich eingetragenen
     Leistungsdaten der Schüler:innen dieser Stufe im aktuellen Halbjahr – z.B. um manuell nachgetragene
@@ -355,6 +368,8 @@
       <tbody></tbody>
     </table>
   </div>
+
+  </details>
 
   <datalist id="kurs-datalist-anzahl"></datalist>
   <datalist id="kursart-datalist"></datalist>
