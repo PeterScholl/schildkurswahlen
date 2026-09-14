@@ -178,9 +178,9 @@ braucht jede Seite ihre eigene Verbindungseingabe).
 
 Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
 Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
-**3. Wartung** mit sechs Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
+**3. Wartung** mit sieben Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
 `wartung-baustein` in `css/style.css`) – auf-/zuklappbar über einen Klick auf die Überschrift, standardmäßig
-eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sechs Bausteine erschlägt:
+eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sieben Bausteine erschlägt:
 
 - **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr
@@ -334,9 +334,20 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sec
   stillschweigend übersprungen. Schüler:innen werden über die "Studentennummer" der Untis-Datei der
   Schild-internen Schüler-ID zugeordnet – Voraussetzung dafür ist, dass diese beim Untis-Export tatsächlich
   befüllt wird (z.B. weil Untis ursprünglich mit Schild-Daten importiert wurde); Schüler:innen der Stufe
-  ohne zuordenbare Untis-Zeile werden nicht geprüft, sondern nur gezählt – bis zu 10 ihrer Namen stehen als
-  Tooltip an der Statuszeile. Rein lesende Prüfung ohne Lösch-/Änderungsfunktion (anders als beim
+  ohne zuordenbare Untis-Zeile werden nicht geprüft, sondern nur gezählt – ein (i)-Symbol hinter der
+  Statuszeile zeigt beim Drüberfahren bis zu 10 ihrer Namen. Rein lesende Prüfung ohne Lösch-/Änderungsfunktion (anders als beim
   Blockung-Abgleich aktuell kein "Übernehmen").
+
+- **"Pflichtunterricht im Klassenverband (PUK) prüfen"** – reiner Klassenunterricht ohne eigenen Kurs trägt
+  an manchen Schulen die Kursart "PUK" direkt auf dem Leistungsdaten-Eintrag; andere Kursarten sind
+  irgendwo als echter Kurs abgebildet und werden von den übrigen Bausteinen hier bereits erfasst. "Prüfen"
+  geht alle Klassen durch und vergleicht je Fach und Klasse zwei Dinge: ob alle Schüler:innen dieser Klasse
+  für dieses Fach dieselbe Lehrkraft eingetragen haben ("Unterschiedliche Lehrer:innen: …"), und ob
+  wirklich alle Schüler:innen der Klasse dieses Fach überhaupt als PUK eingetragen haben (Pflichtunterricht
+  betrifft die ganze Klasse – fehlt es bei einem Teil, steht neben dem Hinweis ein (i)-Symbol, das beim
+  Drüberfahren bis zu 10 Namen der betroffenen Personen zeigt). Die Ergebnistabelle lässt sich im Spaltenkopf **Klasse** filtern
+  (Checkbox-Popover, dasselbe Excel-artige Muster wie bei "Leere Kurse suchen"). Rein lesende Prüfung ohne
+  Lösch-/Änderungsfunktion.
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -657,7 +668,14 @@ Datei-lokalen Zustand wie `state`, `schildKurse`, `kursById`): `$(id)`, `reveal(
 statt Closure, da beide Seiten ihre eigene unabhängig geladene Map pflegen - `app.js`/`wartung.js` legen
 sich dafür einen kleinen 1-Parameter-Wrapper an, damit bestehende Aufrufe `schuelerLabel(s)`
 unverändert bleiben), `mapWithConcurrency()`, `batchWithBisection()`, `DEFAULT_JAHRGANG_KUERZEL`,
-`networkErrorHintHtml()`/`setStatus()` (Netzwerkfehler-Hinweis, siehe Fehlerbehebung weiter unten). Als
+`networkErrorHintHtml()`/`setStatus()` (Netzwerkfehler-Hinweis, siehe Fehlerbehebung weiter unten),
+`infoPopoverHtml(items, summaryTitle)` ((i)-Symbol für Detail-Listen wie betroffene Namen - Overlay per
+reinem CSS-Hover/Tastaturfokus (`position: absolute`, siehe `.info-popover` in css/style.css), verschiebt
+beim Einblenden also nichts - Ersatz für einen ersten Anlauf mit `<details>`, der den Inhalt in den
+normalen Textfluss einfügte und dadurch z.B. Tabellenzeilen auseinanderschob, und für den nackten
+`title`-Attribut-Tooltip davor (kein eigenes Styling, keine Liste möglich); kürzt selbst auf die ersten 10
+Einträge plus "… und N weitere", liefert `""` bei leerer Liste; genutzt vom Untis- und vom PUK-Abgleich in
+`wartung.js`). Als
 `window.SharedCode` exportiert; `app.js`/`wartung.js` holen sich die benötigten Funktionen einmal am
 Dateianfang per Destructuring (`const { $, reveal, ... } = SharedCode;`), der Rest der Datei ruft sie
 unverändert wie zuvor auf.
@@ -1013,7 +1031,7 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   (`detailsPruefen`, Default an) wird dieser Kandidat zusätzlich geprüft, statt ihn blind als Treffer zu
   werten (das war der ursprüngliche Bug: eine Sp-GK1-statt-Sp-GK2-Umwahl blieb im Ein-Kandidat-Fall
   unbemerkt) - verglichen werden die aus dem Kürzel geratene Kursnummer sowie, falls der Lehrer-Katalog
-  geladen werden konnte (`SvwsApi.getLehrer()`, einmalig und nur bei Bedarf in `lehrerById` gecacht), eine
+  geladen werden konnte (`ensureLehrerKatalogGeladen()`, ruft bei Bedarf einmalig `SvwsApi.getLehrer()` auf und cacht das Ergebnis in `lehrerById` - seit der PUK-Prüfung (s.u.) als gemeinsamer Helper beider Aufrufer herausgezogen), eine
   Überschneidung der Lehrer-Kürzel (Blockung: `GostBlockungKursLehrer.kuerzel` direkt aus
   `blockungsKursInfo`; echter Kurs: `KursDaten.lehrer`/`weitereLehrer[].idLehrer`, über `lehrerById`
   aufgelöst). Beide Signale zählen nur als Abweichung, wenn sie auf *beiden* Seiten bestimmbar sind (kein
@@ -1119,10 +1137,39 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
     Kursart-Angabe in Schild hat (sonst kein aussagekräftiger Vergleich möglich, kein falscher Alarm).
 
   Schüler:innen der Stufe, für die keine passende "Studentennummer" in der Untis-Datei gefunden wurde,
-  werden nicht geprüft, sondern nur gezählt (`keineUntisZeilenLabels`) - bis zu 10 ihrer Namen stehen als
-  natives `title`-Tooltip an der Statuszeile (Maus draufhalten), der Rest nur als "… und N weitere". Rein
-  lesend,
-  keine Lösch-/Änderungsfunktion (anders als beim Blockung-Abgleich noch kein "Übernehmen").
+  werden nicht geprüft, sondern nur gezählt (`keineUntisZeilenLabels`) - `SharedCode.infoPopoverHtml()`
+  fügt dafür direkt hinter der Statuszeile ein (i)-Symbol ein, das per CSS-Hover/Tastaturfokus (nicht mehr
+  per Klick - ein erster Anlauf nutzte `<details>`, das schob aber beim Öffnen sichtbaren Inhalt
+  auseinander) bis zu 10 Namen als überlagerndes Overlay zeigt, der Rest nur als "… und N weitere"; ein von
+  einem vorherigen Lauf noch stehendes Symbol wird vorher entfernt (dasselbe Muster wie `setStatus()` das
+  für den network-error-hint macht). Rein lesend, keine Lösch-/Änderungsfunktion (anders als beim
+  Blockung-Abgleich noch kein "Übernehmen").
+
+- **"Pflichtunterricht im Klassenverband (PUK) prüfen"**: geht - anders als die übrigen Bausteine, die
+  jeweils eine Auswahl (Jahrgang/Stufe/Datei) brauchen - direkt alle in `schildKlassen` geladenen Klassen
+  durch, jeweils eingeschränkt auf die im aktuellen Status-Filter enthaltenen Mitglieder
+  (`klassenMitMitgliedern`, Klassen ohne verbleibende Mitglieder werden übersprungen). Lädt zunächst
+  konkurrenzbegrenzt (`mapWithConcurrency`) die Lernabschnittsdaten *aller* betroffenen Schüler:innen in
+  `ladBySchuelerId` sowie einmalig den Lehrer-Katalog (`ensureLehrerKatalogGeladen()`), dann wertet
+  `onRunPukCheck()` klassenweise aus: `pukByFach` gruppiert je Klasse die Leistungsdaten-Einträge mit
+  Kursart "PUK" (`(l.kursart || "").trim().toUpperCase() === "PUK"`, case-/leerzeichen-unabhängig; andere
+  Kursarten sind irgendwo als echter Kurs abgebildet und werden von den anderen Bausteinen bereits geprüft)
+  nach `fachID` - dieses Feld direkt vom Leistungsdaten-Eintrag zu nehmen ist hier anders als beim
+  Blockung-/Untis-Abgleich unproblematisch, weil die dort dokumentierte Unzuverlässigkeit sich auf per
+  Blockung "hochgeschriebene" Einträge bezieht, PUK-Einträge aber gewöhnliche manuell erfasste
+  Leistungsdaten ohne `kursID` sind (kein alternativer, vertrauenswürdigerer Wert existiert dafür).
+  Je Fach/Klasse zwei unabhängige Prüfungen: **Lehrer-Vergleich** (nur nicht-leere `lehrerID`-Werte
+  verglichen; mehr als eine unterschiedliche ID → Meldung "Unterschiedliche Lehrer:innen: Kürzel (Anzahl),
+  …", Kürzel über `lehrerById` aufgelöst) und **Vollständigkeits-Vergleich** (Anzahl der Einträge zu
+  diesem Fach kleiner als die Klassengröße → Meldung mit Anzahl, fehlende Schüler:innen als
+  `infoPopoverHtml()`-(i)-Symbol mit bis zu 10 Namen direkt in der Hinweis-Zelle, analog zum Untis-Abgleich
+  oben - `namen: []` unterdrückt das Symbol bei der Lehrer-Vergleich-Zeile, die nichts aufzulisten hat).
+  `populatePukKlasseFilter()`/
+  `persistPukFilter()`/`updatePukFilterButtonState()`/`onPukFilterChange()`/`filteredPukRows()` sind der
+  Klasse-Spaltenkopf-Filter im selben Excel-artigen Popover-Muster wie bei "Leere Kurse suchen"
+  (Fach/Kursart) bzw. "Leistungsdaten mit leerem Kurs" (Kursart) - baut die Checkbox-Liste aus den
+  *tatsächlich* gefundenen `pukResults`, nicht dem vollen Klassenkatalog. Rein lesend, keine
+  Lösch-/Änderungsfunktion.
 
 `onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
 `js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`

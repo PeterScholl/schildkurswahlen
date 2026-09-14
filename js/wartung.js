@@ -49,8 +49,18 @@
   // Rein zustandslose Utilities kommen aus js/sharedCode.js (identisch von js/app.js genutzt, siehe
   // dortiger Kopfkommentar) - hier nur als lokale Bindings, damit der Rest der Datei unverändert
   // `$(...)`, `escapeHtml(...)` usw. aufrufen kann.
-  const { $, reveal, escapeHtml, idFromLabel, kursLabel, mapWithConcurrency, batchWithBisection, DEFAULT_JAHRGANG_KUERZEL, setStatus } =
-    SharedCode;
+  const {
+    $,
+    reveal,
+    escapeHtml,
+    idFromLabel,
+    kursLabel,
+    mapWithConcurrency,
+    batchWithBisection,
+    DEFAULT_JAHRGANG_KUERZEL,
+    infoPopoverHtml,
+    setStatus,
+  } = SharedCode;
 
   function persist() { Storage.scheduleSave(state); }
 
@@ -1970,6 +1980,20 @@
     };
   }
 
+  /** Lädt den Lehrer-Katalog (Kürzel/Name je Lehrkraft, schulweit) einmalig bei Bedarf und cacht ihn in
+   *  `lehrerById` - genutzt vom Blockung-Abgleich (Detail-Vergleich) und der PUK-Prüfung, um Lehrer-IDs in
+   *  lesbare Kürzel aufzulösen. Ein Fehler hier ist nicht fatal - beide Aufrufer laufen dann einfach ohne
+   *  Lehrer-Namen weiter (IDs als Fallback). */
+  async function ensureLehrerKatalogGeladen() {
+    if (lehrerById.size > 0) return;
+    try {
+      const lehrerListe = await SvwsApi.getLehrer();
+      lehrerById = new Map(lehrerListe.map((l) => [l.id, l]));
+    } catch {
+      // s.o. - kein Abbruch, Aufrufer fallen auf IDs zurück
+    }
+  }
+
   async function onRunBlockungAbgleich() {
     const statusEl = $("blockung-abgleich-status");
     const blockung = gostBlockungen[Number($("blockung-abgleich-blockung").value)];
@@ -2005,15 +2029,7 @@
     // in der Blockung hinterlegten Namen/Kürzeln (GostBlockungKursLehrer) vergleichbar zu machen - einmalig
     // geladen und danach wiederverwendet (der Katalog ist nicht abschnittsabhängig).
     const detailsPruefen = $("blockung-abgleich-details").checked;
-    if (detailsPruefen && lehrerById.size === 0) {
-      try {
-        const lehrerListe = await SvwsApi.getLehrer();
-        lehrerById = new Map(lehrerListe.map((l) => [l.id, l]));
-      } catch {
-        // Lehrer-Katalog ist nur ein zusätzliches Vergleichssignal - falls er nicht geladen werden kann,
-        // läuft der Kursnummer-Vergleich trotzdem weiter, nur ohne Lehrer-Abgleich.
-      }
-    }
+    if (detailsPruefen) await ensureLehrerKatalogGeladen();
 
     // Kursnummer/Suffix je Blockungs-Kurs (nur für die Anzeige, z.B. "GK 3") - kommt aus den
     // Blockungsdaten, nicht aus dem Ergebnis. WICHTIG: Blockungs-Kurs-IDs (Gost_Blockung_Kurse.ID) sind
@@ -2730,18 +2746,20 @@
       `${results.length} Abweichung(en) bei ${total} Schüler:innen der Stufe gefunden` +
         (fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : "") +
         (keineUntisZeilenLabels.length
-          ? ` (${keineUntisZeilenLabels.length} Schüler:innen ohne zuordenbare Untis-Zeile - Studentennummer nicht gefunden - zum Ansehen von bis zu 10 Namen hier mit der Maus verweilen)`
+          ? ` (${keineUntisZeilenLabels.length} Schüler:innen ohne zuordenbare Untis-Zeile - Studentennummer nicht gefunden)`
           : "") +
         ".",
       results.length || keineUntisZeilenLabels.length ? "warn" : "ok"
     );
-    // Tooltip (natives title-Attribut) mit bis zu 10 Namen der "ohne zuordenbare Untis-Zeile"-Schüler:innen
-    // - erspart einen eigenen Popover für nur diesen einen Diagnose-Fall. Leerer String löscht einen
-    // eventuell noch von einem vorherigen Lauf stehenden Tooltip.
-    statusEl.title = keineUntisZeilenLabels.length
-      ? keineUntisZeilenLabels.slice(0, 10).join("\n") +
-        (keineUntisZeilenLabels.length > 10 ? `\n… und ${keineUntisZeilenLabels.length - 10} weitere` : "")
-      : "";
+    // (i)-Info-Symbol mit bis zu 10 Namen der "ohne zuordenbare Untis-Zeile"-Schüler:innen direkt hinter
+    // der Statuszeile - ein zuvor von einem vorherigen Lauf noch stehendes Symbol wird zuerst entfernt
+    // (dasselbe Muster wie setStatus() das für den network-error-hint macht).
+    if (statusEl.nextElementSibling && statusEl.nextElementSibling.classList.contains("info-popover")) {
+      statusEl.nextElementSibling.remove();
+    }
+    if (keineUntisZeilenLabels.length > 0) {
+      statusEl.insertAdjacentHTML("afterend", infoPopoverHtml(keineUntisZeilenLabels, "Betroffene Schüler:innen anzeigen"));
+    }
   }
 
   function renderUntisAbgleichTable() {
@@ -2755,6 +2773,189 @@
         <td>${escapeHtml(r.kursUntis)}</td>
         <td>${escapeHtml(r.kursLeistungsdaten)}</td>
         <td>${escapeHtml(r.hinweis)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
+  // ---------- 9. Pflichtunterricht im Klassenverband (PUK) prüfen ----------
+  // Reiner Klassenunterricht ohne eigenen Kurs trägt an manchen Schulen die Kursart "PUK" direkt auf dem
+  // Leistungsdaten-Eintrag (kein kursID nötig) - andere Kursarten sind irgendwo als echter Kurs abgebildet
+  // und werden von den übrigen Wartungs-Bausteinen hier bereits geprüft (leerer Kurs, Blockung, Untis).
+  // Zwei Prüfungen je Fach und Klasse: (1) hat jede/r Schüler:in derselben Klasse für dieses Fach
+  // dieselbe(n) Lehrkraft eingetragen, (2) haben wirklich ALLE Schüler:innen der Klasse dieses Fach als
+  // PUK eingetragen (Pflichtunterricht betrifft die ganze Klasse - fehlt es bei einem Teil, ist das
+  // auffällig).
+
+  let pukResults = []; // [{klasseId, klasseLabel, fachLabel, hinweis, namen}] - namen: betroffene Schüler:innen fürs (i)-Symbol, leer = kein Symbol
+
+  async function onRunPukCheck() {
+    const statusEl = $("puk-status");
+    const progressEl = $("puk-progress");
+    $("btn-run-puk").disabled = true;
+    setStatus(statusEl, "Lade Lehrer-Katalog …", "");
+    await ensureLehrerKatalogGeladen();
+
+    const lehrerKuerzel = (id) => {
+      if (id == null) return "(kein Lehrer)";
+      const l = lehrerById.get(id);
+      return l ? l.kuerzel : `Lehrer-ID ${id}`;
+    };
+    const fachById = new Map(schildFaecher.map((f) => [f.id, f]));
+    const fachLabel = (id) => {
+      const f = fachById.get(id);
+      return f ? `${f.kuerzel} – ${f.bezeichnung || ""}` : `Fach-ID ${id}`;
+    };
+
+    // Klassen samt ihrer im aktuell geladenen Status-Filter enthaltenen Mitglieder - Klassen ohne (mehr)
+    // Mitglieder werden übersprungen.
+    const klassenMitMitgliedern = schildKlassen
+      .map((klasse) => ({
+        klasse,
+        mitglieder: (klasse.schueler || []).map((s) => schuelerById.get(s.id)).filter(Boolean),
+      }))
+      .filter((k) => k.mitglieder.length > 0);
+
+    const alleMitglieder = klassenMitMitgliedern.flatMap((k) => k.mitglieder);
+    const total = alleMitglieder.length;
+    if (total === 0) {
+      setStatus(statusEl, "Keine Klassen mit Schüler:innen im aktuell geladenen Status-Filter gefunden.", "warn");
+      $("btn-run-puk").disabled = false;
+      return;
+    }
+
+    progressEl.max = total;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+
+    let processed = 0;
+    let fehler = 0;
+    const ladBySchuelerId = new Map();
+    await mapWithConcurrency(alleMitglieder, 6, async (s) => {
+      try {
+        ladBySchuelerId.set(s.id, await SvwsApi.getLernabschnittsdaten(s.id, abschnittId));
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Lade Leistungsdaten: ${processed} / ${total} Schüler:innen …`, "");
+      }
+    });
+
+    const results = [];
+    for (const { klasse, mitglieder } of klassenMitMitgliedern) {
+      const klasseLabel = klasse.kuerzel || klasse.beschreibung || "–";
+
+      // Fach-ID -> [{schueler, lehrerId}], nur Leistungsdaten-Einträge mit Kursart "PUK".
+      const pukByFach = new Map();
+      for (const s of mitglieder) {
+        const lad = ladBySchuelerId.get(s.id);
+        if (!lad) continue;
+        for (const l of lad.leistungsdaten || []) {
+          if ((l.kursart || "").trim().toUpperCase() !== "PUK") continue;
+          if (l.fachID == null) continue;
+          if (!pukByFach.has(l.fachID)) pukByFach.set(l.fachID, []);
+          pukByFach.get(l.fachID).push({ schueler: s, lehrerId: l.lehrerID });
+        }
+      }
+
+      for (const [fachId, eintraege] of pukByFach) {
+        // 1. Lehrer-Vergleich: nur nicht-leere Lehrer-IDs verglichen - eine fehlende Lehrer-Zuordnung
+        // selbst ist (noch) kein eigener Befund hier.
+        const lehrerIds = new Set(eintraege.filter((e) => e.lehrerId != null).map((e) => e.lehrerId));
+        if (lehrerIds.size > 1) {
+          const gruppen = [...lehrerIds]
+            .map((id) => `${lehrerKuerzel(id)} (${eintraege.filter((e) => e.lehrerId === id).length})`)
+            .join(", ");
+          results.push({
+            klasseId: klasse.id,
+            klasseLabel,
+            fachLabel: fachLabel(fachId),
+            hinweis: `Unterschiedliche Lehrer:innen: ${gruppen}`,
+            namen: [],
+          });
+        }
+
+        // 2. Vollständigkeits-Vergleich: Pflichtunterricht im Klassenverband betrifft die ganze Klasse -
+        // fehlt das Fach bei einem Teil der Schüler:innen, ist das auffällig.
+        if (eintraege.length < mitglieder.length) {
+          const habenEsIds = new Set(eintraege.map((e) => e.schueler.id));
+          const fehlendeLabels = mitglieder.filter((s) => !habenEsIds.has(s.id)).map((s) => schuelerLabel(s));
+          results.push({
+            klasseId: klasse.id,
+            klasseLabel,
+            fachLabel: fachLabel(fachId),
+            hinweis: `Nicht bei allen Schüler:innen der Klasse vorhanden (${eintraege.length} von ${mitglieder.length})`,
+            namen: fehlendeLabels,
+          });
+        }
+      }
+    }
+
+    progressEl.classList.add("hidden");
+    pukResults = results;
+    populatePukKlasseFilter();
+    renderPukTable();
+    $("btn-run-puk").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} Befund(e) bei ${klassenMitMitgliedern.length} Klasse(n) / ${total} Schüler:innen gefunden` +
+        (fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : "") +
+        ".",
+      results.length ? "warn" : "ok"
+    );
+  }
+
+  /** Baut die Checkbox-Liste im Klasse-Spaltenkopf-Popover aus den tatsächlich gefundenen `pukResults`
+   *  (nicht dem vollen Schild-Klassenkatalog) - dasselbe Muster wie bei "Leistungsdaten mit leerem Kurs"
+   *  (Kursart) bzw. "Leere Kurse suchen" (Fach/Kursart). */
+  function populatePukKlasseFilter() {
+    const gespeichert = state.pukFilter.klassen || [];
+    const klassen = Array.from(new Set(pukResults.map((r) => r.klasseLabel))).sort((a, b) => a.localeCompare(b, "de"));
+    $("puk-klasse-filter-options").innerHTML = klassen
+      .map((k) => {
+        const checked = gespeichert.length === 0 || gespeichert.includes(k);
+        return `<label><input type="checkbox" class="puk-klasse-cb" value="${escapeHtml(k)}" ${checked ? "checked" : ""}/> ${escapeHtml(k)}</label>`;
+      })
+      .join("");
+    document.querySelectorAll(".puk-klasse-cb").forEach((cb) => cb.addEventListener("change", onPukFilterChange));
+    updatePukFilterButtonState();
+  }
+
+  function persistPukFilter() {
+    state.pukFilter = { klassen: Array.from(document.querySelectorAll(".puk-klasse-cb:checked")).map((cb) => cb.value) };
+    persist();
+  }
+
+  function updatePukFilterButtonState() {
+    const cbs = document.querySelectorAll(".puk-klasse-cb");
+    const aktiv = cbs.length > 0 && !Array.from(cbs).every((cb) => cb.checked);
+    $("puk-klasse-filter-btn").classList.toggle("active", aktiv);
+  }
+
+  function onPukFilterChange() {
+    persistPukFilter();
+    updatePukFilterButtonState();
+    renderPukTable();
+  }
+
+  /** Wendet den Klasse-Filter auf pukResults an (leeres Array = kein Filter aktiv = alles anzeigen). */
+  function filteredPukRows() {
+    const filter = state.pukFilter.klassen || [];
+    if (filter.length === 0) return pukResults;
+    return pukResults.filter((r) => filter.includes(r.klasseLabel));
+  }
+
+  function renderPukTable() {
+    const tbody = document.querySelector("#puk-table tbody");
+    tbody.innerHTML = filteredPukRows()
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.klasseLabel)}</td>
+        <td>${escapeHtml(r.fachLabel)}</td>
+        <td>${escapeHtml(r.hinweis)} ${infoPopoverHtml(r.namen, "Betroffene Schüler:innen anzeigen")}</td>
       </tr>`
       )
       .join("");
@@ -2865,6 +3066,10 @@
       evt.stopPropagation();
       toggleColFilterPopover("check-leerer-kurs-kursart-filter-popover");
     });
+    $("puk-klasse-filter-btn").addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      toggleColFilterPopover("puk-klasse-filter-popover");
+    });
     document.querySelectorAll(".col-filter-popover").forEach((pop) => pop.addEventListener("click", (evt) => evt.stopPropagation()));
     document.addEventListener("click", closeColFilterPopovers);
     document.addEventListener("keydown", (evt) => {
@@ -2894,6 +3099,8 @@
     $("untis-abgleich-jahrgang").addEventListener("change", updateUntisAbgleichButtonState);
     $("btn-run-untis-abgleich").addEventListener("click", onRunUntisAbgleich);
     renderUntisDateiStatus();
+
+    $("btn-run-puk").addEventListener("click", onRunPukCheck);
 
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);

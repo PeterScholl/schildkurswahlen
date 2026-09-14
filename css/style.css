@@ -188,6 +188,50 @@ button:hover:not(:disabled) { filter: brightness(1.08); }
   padding: 0.05rem 0.3rem;
 }
 
+/* (i)-Info-Symbol für Detail-Listen (z.B. betroffene Namen) - Overlay per reinem CSS-Hover (oder
+   Tastaturfokus), kein JS nötig. `.info-popover-content` ist absolut positioniert, verschiebt beim
+   Einblenden also nichts (anders als ein zuvor genutztes <details>, das den Inhalt in den normalen
+   Textfluss einfügt und dadurch z.B. Tabellenzeilen auseinanderschiebt) - siehe infoPopoverHtml() in
+   js/sharedCode.js. */
+.info-popover { position: relative; display: inline-block; margin-left: 0.3rem; vertical-align: middle; }
+.info-popover-icon {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+}
+.info-popover-icon:hover, .info-popover-icon:focus-visible { text-decoration: underline; }
+.info-popover-content {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: 100%;
+  margin-top: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  font-size: 0.85rem;
+  max-width: 22rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  pointer-events: none;
+}
+.info-popover:hover .info-popover-content,
+.info-popover:focus-within .info-popover-content {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+.info-popover-content ul { margin: 0; padding-left: 1.1rem; }
+.info-popover-content li { margin: 0.1rem 0; }
+
 .counts { margin-top: 0.5rem; font-size: 0.9rem; color: var(--muted); }
 
 .checkbox-row {

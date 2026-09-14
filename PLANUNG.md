@@ -211,3 +211,35 @@ nicht zu beachtender Elemente, die weiterhin offen bleibt:
   schaltbare Checkbox (nicht Teil von "Kursart abgleichen" selbst) - Vorlage für weitere Rewrite-Regeln,
   die bei Bedarf als weitere Checkboxen ergänzt werden können, bis sich ein Muster für eine generischere
   Regel-Liste abzeichnet.
+
+### 7. Neuer Bereich "Pflichtunterricht im Klassenverband (PUK) prüfen" (wartung.html)
+
+Umgesetzt (September 2026): Reiner Klassenunterricht ohne eigenen Kurs trägt an manchen Schulen die
+Kursart "PUK" direkt auf dem Leistungsdaten-Eintrag (kein `kursID` nötig) - andere Kursarten sind irgendwo
+als echter Kurs abgebildet und werden von den übrigen Wartungs-Bausteinen bereits geprüft (leerer Kurs,
+Blockung, Untis). Neuer Baustein geht alle Klassen durch und prüft je Fach und Klasse zwei Dinge:
+
+- **Lehrer-Vergleich**: haben alle Schüler:innen der Klasse für dieses Fach dieselbe Lehrkraft eingetragen?
+- **Vollständigkeits-Vergleich**: haben wirklich *alle* Schüler:innen der Klasse dieses Fach als PUK
+  eingetragen - Pflichtunterricht betrifft die ganze Klasse, fehlt es bei einem Teil, ist das auffällig.
+
+Ergebnistabelle im Spaltenkopf **Klasse** filterbar (dasselbe Excel-artige Popover-Muster wie bei "Leere
+Kurse suchen"/"Leistungsdaten mit leerem Kurs"), fehlende Schüler:innen mit bis zu 10 Namen einsehbar
+(analog zum Untis-Abgleich). Dabei den Lehrer-Katalog-Lazy-Load aus dem Blockung-Abgleich
+(`SvwsApi.getLehrer()` bei Bedarf, in `lehrerById` gecacht) in einen gemeinsamen Helper
+`ensureLehrerKatalogGeladen()` gezogen, den jetzt beide Bausteine nutzen. Rein lesende Prüfung ohne
+Lösch-/Änderungsfunktion.
+
+**Nachtrag (September 2026):** Auf Rückmeldung, dass ein Hover-Tooltip (natives `title`-Attribut, wie
+zunächst hier und beim Untis-Abgleich für die Namenslisten genutzt) "nicht so günstig" ist, durch ein
+(i)-Symbol mit eigenem Overlay ersetzt. Neue gemeinsame Funktion
+`SharedCode.infoPopoverHtml(items, summaryTitle)` (kürzt selbst auf 10 Einträge + "… und N weitere")
+ersetzt die bisherige `statusEl.title`-Zuweisung beim Untis-Abgleich und die `title`-Zellenattribute bei
+der PUK-Prüfung - an beiden Stellen konsistent umgestellt, nicht nur an der zuletzt bemängelten.
+
+**Nachtrag 2 (September 2026):** Die erste Fassung von `infoPopoverHtml()` nutzte ein natives `<details>`
+(Klick zum Öffnen) - das fügt den Inhalt aber in den normalen Textfluss ein, wodurch sich beim Öffnen
+Tabellenzeilen sichtbar verschoben ("die Darstellung verrückt sich"). Auf Rückmeldung umgebaut auf ein
+reines CSS-Hover-Overlay (`.info-popover-content` mit `position: absolute`, siehe css/style.css) - blendet
+sich über den Inhalt statt ihn zu verschieben, per Maus-Hover oder Tastaturfokus (`:focus-within`)
+erreichbar über einen echten `<button>` statt nur Text.

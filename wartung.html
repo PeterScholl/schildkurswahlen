@@ -470,6 +470,45 @@
 
   </details>
 
+  <details class="wartung-baustein">
+  <summary><h3>Pflichtunterricht im Klassenverband (PUK) prüfen</h3></summary>
+  <p class="hint">
+    Vergleicht für alle Klassen die Leistungsdaten-Einträge mit der Kursart "PUK" (Pflichtunterricht im
+    Klassenverband) - der übliche Klassenunterricht ohne eigenen Kurs, der deshalb von den anderen
+    Wartungs-Bausteinen hier (die sich auf echte Kurse beziehen) nicht erfasst wird. Je Fach und Klasse zwei
+    Prüfungen: ob alle Schüler:innen dieser Klasse für dieses Fach dieselbe Lehrkraft eingetragen haben, und
+    ob überhaupt alle Schüler:innen der Klasse dieses Fach als PUK eingetragen haben (Pflichtunterricht
+    betrifft die ganze Klasse - fehlt es bei einem Teil, ist das auffällig). Rein lesende Prüfung ohne
+    Lösch-/Änderungsfunktion.
+  </p>
+
+  <button id="btn-run-puk">Prüfen</button>
+  <span id="puk-status" class="status-msg"></span>
+  <progress id="puk-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div class="table-scroll">
+    <table id="puk-table">
+      <thead>
+        <tr>
+          <th>
+            Klasse
+            <span class="col-filter-wrap">
+              <button type="button" class="col-filter-btn" id="puk-klasse-filter-btn" title="Nach Klasse filtern">▾</button>
+              <div class="col-filter-popover hidden" id="puk-klasse-filter-popover">
+                <div class="col-filter-options" id="puk-klasse-filter-options"></div>
+              </div>
+            </span>
+          </th>
+          <th>Fach</th>
+          <th>Hinweis</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  </details>
+
   <datalist id="kurs-datalist-anzahl"></datalist>
   <datalist id="kursart-datalist"></datalist>
 </section>

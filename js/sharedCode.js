@@ -81,6 +81,31 @@
    *  vorhanden) - deckt Sek I und Oberstufe gleichermaßen ab. */
   const DEFAULT_JAHRGANG_KUERZEL = new Set(["05", "06", "07", "08", "09", "10", "EF", "Q1", "Q2"]);
 
+  /** (i)-Info-Symbol, das per Hover (oder Tastaturfokus) eine kurze Liste als frei schwebendes Overlay
+   *  einblendet (reines CSS, `position: absolute` - siehe `.info-popover` in css/style.css) - für Stellen,
+   *  an denen eine Liste (z.B. betroffene Namen) einsehbar sein soll, ohne dass sich beim Einblenden die
+   *  umgebende Tabellenzeile/-zeilen verschieben (das passierte mit einem zuvor genutzten `<details>`, das
+   *  den Inhalt in den normalen Textfluss einfügt statt ihn zu überlagern) und ohne den nackten
+   *  `title`-Attribut-Tooltip zu nehmen (kein eigenes Styling, keine Liste möglich). Kürzt intern selbst
+   *  auf die ersten 10 Einträge plus "… und N weitere" - Aufrufer übergeben die volle Liste. Liefert `""`,
+   *  wenn `items` leer ist (dann einfach nichts einfügen).
+   *  @param items string[] - volle Liste, wird hier auf max. 10 gekürzt
+   *  @param summaryTitle Text für den title/aria-label des (i)-Symbols selbst (Tastatur-/
+   *  Screenreader-Hinweis, z.B. "Betroffene Schüler:innen anzeigen") */
+  function infoPopoverHtml(items, summaryTitle) {
+    if (!items || items.length === 0) return "";
+    const sichtbar = items.slice(0, 10);
+    const rest = items.length - sichtbar.length;
+    const liste = sichtbar.map((i) => `<li>${escapeHtml(i)}</li>`).join("") + (rest > 0 ? `<li>… und ${rest} weitere</li>` : "");
+    const label = escapeHtml(summaryTitle || "Details anzeigen");
+    return (
+      '<span class="info-popover">' +
+      `<button type="button" class="info-popover-icon" title="${label}" aria-label="${label}">ⓘ</button>` +
+      `<span class="info-popover-content"><ul>${liste}</ul></span>` +
+      "</span>"
+    );
+  }
+
   /** HTML für den Info-Hinweis bei einem Netzwerkfehler (siehe setStatus() unten) - weist auf mögliche
    *  Ursachen hin (Server generell nicht erreichbar, oder von Firefox' "Local Network Access" blockiert),
    *  ohne eine davon zu behaupten. Domainname kommt bewusst aus `window.location.hostname` statt fest
@@ -132,6 +157,7 @@
     batchWithBisection,
     DEFAULT_JAHRGANG_KUERZEL,
     networkErrorHintHtml,
+    infoPopoverHtml,
     setStatus,
   };
 })(window);
