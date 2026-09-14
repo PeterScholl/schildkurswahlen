@@ -2024,12 +2024,32 @@
       return;
     }
 
-    // Bei aktiviertem Detail-Vergleich (Kursnummer/Lehrer statt nur Fach+Kursart) wird zusätzlich der
-    // Lehrer-Katalog gebraucht, um die Lehrer-IDs echter Kurse (KursDaten.lehrer/weitereLehrer) mit den
-    // in der Blockung hinterlegten Namen/Kürzeln (GostBlockungKursLehrer) vergleichbar zu machen - einmalig
-    // geladen und danach wiederverwendet (der Katalog ist nicht abschnittsabhängig).
+    // Bei aktiviertem Detail-Vergleich (Kursnummer/Lehrer/Abiturfach statt nur Fach+Kursart) werden
+    // zusätzliche Kataloge gebraucht: der Lehrer-Katalog, um die Lehrer-IDs echter Kurse
+    // (KursDaten.lehrer/weitereLehrer) mit den in der Blockung hinterlegten Namen/Kürzeln
+    // (GostBlockungKursLehrer) vergleichbar zu machen, sowie die Laufbahndaten des Abiturjahrgangs, um
+    // AB3/AB4-Verwechslungen zu erkennen (s.u. bei der Abiturfach-Prüfung) - beide einmalig geladen.
     const detailsPruefen = $("blockung-abgleich-details").checked;
-    if (detailsPruefen) await ensureLehrerKatalogGeladen();
+    let abiturFachBySchuelerUndFach = new Map(); // Schüler-ID -> Map<Fach-ID, abiturFach 1-4>
+    if (detailsPruefen) {
+      await ensureLehrerKatalogGeladen();
+      const jahrgang = gostJahrgaenge[Number($("blockung-abgleich-stufe").value)];
+      if (jahrgang) {
+        try {
+          const laufbahndaten = await SvwsApi.getGostAbiturjahrgangLaufbahndaten(jahrgang.abiturjahr);
+          for (const daten of laufbahndaten) {
+            const fachMap = new Map();
+            for (const fb of daten.fachbelegungen || []) {
+              if (fb.abiturFach != null) fachMap.set(fb.fachID, fb.abiturFach);
+            }
+            abiturFachBySchuelerUndFach.set(daten.schuelerID, fachMap);
+          }
+        } catch {
+          // Laufbahndaten sind nur ein zusätzliches Vergleichssignal (AB3/AB4-Verwechslungen) - falls sie
+          // nicht geladen werden können, läuft der übrige Detail-Vergleich trotzdem weiter, nur ohne das.
+        }
+      }
+    }
 
     // Kursnummer/Suffix je Blockungs-Kurs (nur für die Anzeige, z.B. "GK 3") - kommt aus den
     // Blockungsdaten, nicht aus dem Ergebnis. WICHTIG: Blockungs-Kurs-IDs (Gost_Blockung_Kurse.ID) sind
@@ -2179,13 +2199,15 @@
           alsErsatzVerwendeteKursIds.add(gewaehlterKandidat);
 
           // Detail-Vergleich (optional, Default an): Fach+Kursart passen bereits (sonst wäre der Kurs kein
-          // Kandidat) - jetzt zusätzlich Kursnummer und, falls möglich, Lehrer vergleichen, um z.B. eine
-          // Sp-GK1-statt-Sp-GK2-Verwechslung zu erkennen. Beide Signale werden nur gewertet, wenn sie auf
-          // beiden Seiten überhaupt bestimmbar sind (kein Kurs-Kürzel-Suffix bzw. kein Lehrer-Katalog
-          // geladen zählt nicht als Abweichung - das wäre sonst bei Fächern ohne Parallelkurs bzw. ohne
-          // ladbaren Lehrer-Katalog ständig ein falscher Alarm).
+          // Kandidat) - jetzt zusätzlich Kursnummer, Lehrer und (bei GK) Abiturfach-Kennzeichnung
+          // vergleichen, um z.B. eine Sp-GK1-statt-Sp-GK2-Verwechslung oder ein vertauschtes AB3/AB4 zu
+          // erkennen. Alle drei Signale werden nur gewertet, wenn sie auf beiden Seiten überhaupt
+          // bestimmbar sind (kein Kurs-Kürzel-Suffix, kein Lehrer-Katalog geladen bzw. keine
+          // Abiturfach-Kennzeichnung bekannt zählt nicht als Abweichung - das wäre sonst z.B. bei Fächern
+          // ohne Parallelkurs oder bei Nicht-Abiturfächern ständig ein falscher Alarm).
           if (detailsPruefen) {
             const kandidatKurs = kursById.get(gewaehlterKandidat);
+            const quellEintragGewaehlt = (lad.leistungsdaten || []).find((l) => l.kursID === gewaehlterKandidat);
             const abweichungen = [];
 
             const tatsaechlicheNummer = parseKursnummerAusKuerzel(kandidatKurs.kuerzel);
@@ -2211,8 +2233,25 @@
               }
             }
 
+            // Abiturfach-Kennzeichnung (AB3/AB4): Die Blockung/der Kurs selbst kennen diese Unterscheidung
+            // nicht (beides einfach "GK") - kommt deshalb aus den separat geladenen Laufbahndaten
+            // (abiturFachBySchuelerUndFach, s.o.), nicht aus der Blockung. Nur bei GK-Kursen relevant und
+            // nur, wenn die/der Schüler:in dieses Fach dort tatsächlich als 3. oder 4. Abiturfach führt -
+            // sonst (kein Abiturfach, oder LK/ZK/PJK/VTF) keine Aussage möglich.
+            if (kandidatKurs.kursartAllg === "GK" && quellEintragGewaehlt) {
+              const erwartetesAbiturFach = abiturFachBySchuelerUndFach.get(schuelerId)?.get(erwartet.fachID);
+              if (erwartetesAbiturFach === 3 || erwartetesAbiturFach === 4) {
+                const erwarteteKursart = erwartetesAbiturFach === 3 ? "AB3" : "AB4";
+                const tatsaechlicheKursart = (quellEintragGewaehlt.kursart || "").trim().toUpperCase();
+                if ((tatsaechlicheKursart === "AB3" || tatsaechlicheKursart === "AB4") && tatsaechlicheKursart !== erwarteteKursart) {
+                  abweichungen.push(
+                    `Abiturfach-Kennzeichnung (laut Laufbahnplanung: ${erwarteteKursart}, Leistungsdaten: ${tatsaechlicheKursart})`
+                  );
+                }
+              }
+            }
+
             if (abweichungen.length > 0) {
-              const quellEintragGewaehlt = (lad.leistungsdaten || []).find((l) => l.kursID === gewaehlterKandidat);
               results.push({
                 schuelerId,
                 fachID: erwartet.fachID,
@@ -2570,7 +2609,10 @@
 
     const kursbezeichnungPruefen = $("untis-abgleich-kursbezeichnung").checked;
     const kursartPruefen = $("untis-abgleich-kursart").checked;
-    const rewriteAb34ZuGks = $("untis-abgleich-rewrite-ab34-gks").checked;
+    // Getrennt schaltbar, weil AB3/AB4 auf beiden Seiten unabhängig voneinander "falsch" gesetzt sein kann
+    // (Untis-Statistikkennzeichen und Schild-Leistungsdaten sind zwei getrennt gepflegte Datenquellen).
+    const rewriteUntisAb34ZuGks = $("untis-abgleich-rewrite-ab34-gks-untis").checked;
+    const rewriteSchildAb34ZuGks = $("untis-abgleich-rewrite-ab34-gks-schild").checked;
 
     // Untis-Zeilen nach Studentennummer (= Schild-Schüler-ID, siehe Kommentar oben) gruppiert - eine
     // Person hat i.d.R. mehrere Zeilen (eine je gewähltem Fach/Kurs).
@@ -2702,14 +2744,18 @@
               abweichungen.push(`unbekanntes Statistikkennzeichen "${rohCode}" in Untis-Datei`);
             } else {
               let untisKursart = UNTIS_STATISTIKKENNZEICHEN_KURSART[rohCode];
-              if (rewriteAb34ZuGks && (untisKursart === "AB3" || untisKursart === "AB4")) untisKursart = "GKS";
+              if (rewriteUntisAb34ZuGks && (untisKursart === "AB3" || untisKursart === "AB4")) untisKursart = "GKS";
               // Nur werten, wenn mindestens ein Kandidat überhaupt eine Kursart-Angabe in Schild hat -
               // sonst (bei allen Kandidaten leer) ist der Vergleich nicht aussagekräftig, kein falscher
-              // Alarm.
+              // Alarm. Die Schild-seitige Rewrite-Regel wird nur für den Vergleich selbst angewendet, die
+              // Anzeige im Hinweistext zeigt weiterhin den unveränderten Schild-Wert.
               const irgendeineKursartBekannt = kandidaten.some((e) => e.leistungsdaten.kursart);
-              const treffer = kandidaten.some(
-                (e) => e.leistungsdaten.kursart && e.leistungsdaten.kursart.trim().toUpperCase() === untisKursart
-              );
+              const treffer = kandidaten.some((e) => {
+                if (!e.leistungsdaten.kursart) return false;
+                let schildKursart = e.leistungsdaten.kursart.trim().toUpperCase();
+                if (rewriteSchildAb34ZuGks && (schildKursart === "AB3" || schildKursart === "AB4")) schildKursart = "GKS";
+                return schildKursart === untisKursart;
+              });
               if (irgendeineKursartBekannt && !treffer) {
                 abweichungen.push(
                   `Kursart (Untis: ${untisKursart}, Leistungsdaten: ${kandidaten.map((e) => e.leistungsdaten.kursart || "?").join(", ")})`

@@ -140,6 +140,15 @@ wie "GKM"/"AB3"/"AB4") sowie einem zusätzlichen `fachID`-Feld, das serverseitig
 zurücksetzt. Fix: Patch/Create-Payload schicken jetzt nur noch `kursID` (+ `wochenstunden`/bei Neuanlage
 `fachID`) - der Server leitet Kursart und Fachlehrer selbst her. Siehe Fehlerbehebung 14+15 in README.md.
 
+**Nachtrag 5 (September 2026):** Auf Meldung, dass vertauschte AB3-/AB4-Kennzeichnungen (3. vs. 4.
+Abiturfach) nicht erkannt wurden - Kursnummer und Lehrer bleiben dabei gleich (derselbe Kurs), nur die
+Kennzeichnung selbst ist falsch, und die steht nur auf dem Leistungsdaten-Eintrag selbst
+(`SchuelerLeistungsdaten.kursart`), nicht auf Blockung oder Kurs. Fix: Neue Funktion
+`SvwsApi.getGostAbiturjahrgangLaufbahndaten()` lädt die Abiturdaten der ganzen Stufe (welches Fach ist bei
+wem das 3./4. Abiturfach, `AbiturFachbelegung.abiturFach`) als dritte, unabhängige Quelle - bei
+Grundkursen wird die daraus erwartete Kursart (AB3/AB4) gegen den Leistungsdaten-Eintrag verglichen. Siehe
+Fehlerbehebung 16 in README.md.
+
 ### 5. Neues `js/sharedCode.js` für echte Code-Duplikate zwischen app.js und wartung.js
 
 Umgesetzt (September 2026), auf Nachfrage: `js/app.js` und `js/wartung.js` hatten rund 19 gleichnamige
@@ -211,6 +220,13 @@ nicht zu beachtender Elemente, die weiterhin offen bleibt:
   schaltbare Checkbox (nicht Teil von "Kursart abgleichen" selbst) - Vorlage für weitere Rewrite-Regeln,
   die bei Bedarf als weitere Checkboxen ergänzt werden können, bis sich ein Muster für eine generischere
   Regel-Liste abzeichnet.
+
+**Nachtrag 3 (September 2026):** Auf Nachfrage die eine Rewrite-Regel-Checkbox "AB3/AB4 als GKS werten" in
+zwei unabhängig schaltbare Checkboxen aufgeteilt - eine für die Untis-Seite (`rewriteUntisAb34ZuGks`), eine
+für die Schild-Seite (`rewriteSchildAb34ZuGks`). Grund: Untis-Statistikkennzeichen und
+Schild-Leistungsdaten sind zwei getrennt gepflegte Datenquellen, AB3/AB4 kann auf jeder für sich falsch
+gesetzt sein - eine gemeinsame Regel für beide Seiten wäre entweder zu grob (trifft auch die richtige
+Seite) oder zu schwach (deckt nur eine Seite ab).
 
 ### 7. Neuer Bereich "Pflichtunterricht im Klassenverband (PUK) prüfen" (wartung.html)
 

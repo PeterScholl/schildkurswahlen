@@ -281,6 +281,16 @@
     return request("GET", `/gost/blockungen/${blockungsId}`);
   }
 
+  /** Liefert die Abiturdaten (inkl. `fachbelegungen[]` mit `fachID`/`abiturFach` 1-4) aller Schüler:innen
+   *  eines Abiturjahrgangs in einem Aufruf - für "Blockung mit Leistungsdaten abgleichen" (wartung.html),
+   *  um je Fach zu wissen, ob es bei einer/einem Schülerin/Schüler als 3. oder 4. Abiturfach (GK) gewählt
+   *  wurde. Das ist die einzige verlässliche Quelle dafür - weder die Blockung noch der Kurs selbst kennen
+   *  diese Unterscheidung, nur die Leistungsdaten-Kursart (AB3/AB4) *soll* sie widerspiegeln, tut das laut
+   *  Fehlerbehebung in README.md aber nicht immer zuverlässig. */
+  async function getGostAbiturjahrgangLaufbahndaten(abiturjahr) {
+    return request("GET", `/gost/abiturjahrgang/${abiturjahr}/laufbahndaten`);
+  }
+
   /** Liefert den kompletten Lehrer-Katalog der Schule (Kürzel/Name je Lehrkraft) - für
    *  "Blockung mit Leistungsdaten abgleichen" (wartung.html), um die Lehrer-IDs an echten Kursen
    *  (`KursDaten.lehrer`/`weitereLehrer`) mit den in der Blockung hinterlegten Namen/Kürzeln vergleichbar
@@ -310,6 +320,7 @@
     getGostBlockungen,
     getGostBlockungsergebnis,
     getGostBlockungsdaten,
+    getGostAbiturjahrgangLaufbahndaten,
     getLehrer,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,

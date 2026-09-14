@@ -298,7 +298,14 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sie
   direkt aus den Blockungsdaten; echter Kurs: `KursDaten.lehrer`/`weitereLehrer[].idLehrer`, über den
   Lehrer-Katalog aufgelöst). Beide Signale werden nur gewertet, wenn sie auf beiden Seiten überhaupt
   bestimmbar sind (kein Kürzel-Suffix bzw. kein ladbarer Lehrer-Katalog zählt nicht als Abweichung, sonst
-  gäbe es bei Fächern ohne Parallelkurs ständig falschen Alarm). Über die Checkbox **"Auch Kurse zeigen,
+  gäbe es bei Fächern ohne Parallelkurs ständig falschen Alarm). Bei Grundkursen zusätzlich ein dritter
+  Vergleich: Ist das Fach laut Laufbahnplanung das 3. oder 4. Abiturfach der/des Schülerin/Schülers, wird
+  die dafür erwartete spezifische Kursart (AB3 bzw. AB4) gegen die tatsächlich in den Leistungsdaten
+  eingetragene verglichen – deckt vertauschte AB3-/AB4-Kennzeichnungen auf, die weder über Kursnummer noch
+  Lehrer auffallen (derselbe Kurs, dieselbe Lehrkraft, nur die Kennzeichnung als 3. vs. 4. Abiturfach ist
+  vertauscht). Nötig, weil weder die Blockung noch der Kurs selbst diese Unterscheidung kennen (beides
+  einfach "GK") – die Information kommt stattdessen separat aus den Laufbahndaten des Abiturjahrgangs
+  (`SvwsApi.getGostAbiturjahrgangLaufbahndaten()`). Über die Checkbox **"Auch Kurse zeigen,
   die nur in den Leistungsdaten stehen …"** lässt sich optional auch die umgekehrte Richtung mit anzeigen
   (kann bei Kursen außerhalb der Blockung, z.B. Sport/Religion, mehr Rauschen erzeugen, deshalb
   standardmäßig aus).
@@ -322,11 +329,14 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sie
   zusätzlich zum Fach auch die konkrete Kursbezeichnung), **"Kursart abgleichen"** (Default an – vergleicht
   die aus "Statistikkennzeichen" abgeleitete spezifische Kursart, s.u.) und **"Lehrer:in abgleichen"**
   (aktuell deaktiviert – die Kurswahl-Datei enthält dafür keine Information, das bräuchte zusätzlich die
-  separate Untis-Datei GPU002.TXT, für eine spätere Erweiterung vorgesehen). Eine erste **Rewrite-Regel**
-  (auf Nachfrage ergänzt, Default aus): **"AB3/AB4 als GKS werten"** – manchmal ist es nötig, diese beiden
-  von Untis gemeldeten Kursarten beim Vergleich wie "GKS" zu behandeln; nur wirksam, wenn "Kursart
-  abgleichen" aktiv ist. Weitere Rewrite-Regeln oder eine Liste nicht zu beachtender Elemente sind als
-  spätere Erweiterung vorgesehen (dann eher als generische Liste statt weiterer Einzel-Checkboxen). Danach
+  separate Untis-Datei GPU002.TXT, für eine spätere Erweiterung vorgesehen). Zwei erste **Rewrite-Regeln**
+  (auf Nachfrage ergänzt, beide Default aus, nur wirksam wenn "Kursart abgleichen" aktiv ist): **"AB3/AB4
+  laut Untis … als GKS werten"** und **"AB3/AB4 laut Schild-Leistungsdaten … als GKS werten"** – getrennt
+  schaltbar, weil AB3/AB4 auf beiden Seiten unabhängig voneinander "falsch" gesetzt sein kann (Untis und
+  Schild sind zwei getrennt gepflegte Datenquellen) - man kann also z.B. nur die Untis-Seite umdeuten,
+  ohne die Schild-Seite anzufassen, oder umgekehrt. Weitere Rewrite-Regeln oder eine Liste nicht zu
+  beachtender Elemente sind als spätere Erweiterung vorgesehen (dann eher als generische Liste statt
+  weiterer Einzel-Checkboxen). Danach
   **Jahrgangsstufe** wählen (aus dem bereits geladenen Schild-Jahrgangskatalog, mit Schüler:innen-Anzahl je
   Stufe) und "Abgleichen" klicken – geprüft wird je Schüler:in dieser Stufe, ob die in Untis gewählten
   Fächer (und optional Kursbezeichnungen/Kursarten) in den Leistungsdaten wiederzufinden sind; auch ein
@@ -639,6 +649,23 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
     jetzt nur noch `kursID` (+ `wochenstunden`, bei Neuanlage zusätzlich das dort ohnehin pflichtige
     `fachID`) - kein `kursart`, kein `lehrerID` mehr.
 
+16. **"Blockung mit Leistungsdaten abgleichen" erkannte vertauschte AB3-/AB4-Kennzeichnungen nicht** - eine
+    Person, die laut Laufbahnplanung z.B. Fach A als 3. und Fach B als 4. Abiturfach hat, aber in Schild
+    genau andersherum eingetragen war (Fach A = AB4, Fach B = AB3), wurde nicht gemeldet.
+    Ursache: Der Detail-Vergleich prüfte bis dahin nur Kursnummer und Lehrer - beide bleiben bei einer
+    AB3-/AB4-Verwechslung unverändert (derselbe Kurs, dieselbe Lehrkraft, nur die Kennzeichnung als 3. vs.
+    4. Abiturfach ist falsch). Die spezifische Kursart (`AB3`/`AB4`, im Unterschied zur allgemeinen `GK`)
+    steht außerdem nur auf dem Leistungsdaten-Eintrag selbst (`SchuelerLeistungsdaten.kursart`) - weder die
+    Blockung noch der Kurs (`KursDaten.kursartAllg`) kennen diese Unterscheidung, der Vergleich las dieses
+    Feld bislang also gar nicht.
+    **Fix:** Neue Funktion `SvwsApi.getGostAbiturjahrgangLaufbahndaten(abiturjahr)` lädt (bei aktiviertem
+    Detail-Vergleich, einmalig für den ganzen Abgleich) die Abiturdaten aller Schüler:innen der Stufe -
+    einzige verlässliche Quelle dafür, welches Fach bei einer Person das 3./4. Abiturfach ist
+    (`AbiturFachbelegung.abiturFach`). Bei Grundkursen wird daraus die erwartete Kursart (AB3/AB4)
+    bestimmt und gegen `SchuelerLeistungsdaten.kursart` des gewählten Kandidaten verglichen - nur, wenn die
+    Person das Fach dort tatsächlich als 3./4. Abiturfach führt (sonst keine Aussage möglich, kein falscher
+    Alarm).
+
 ## Programmstruktur
 
 ```text
@@ -717,6 +744,7 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getGostBlockungen(abiturjahr, halbjahr)` | `GET /gost/abiturjahrgang/{abiturjahr}/{halbjahr}/blockungen` | Blockungen (Planungsstände) einer Stufe in einem Gost-Halbjahr (`halbjahr` hier: 0=EF.1 … 5=Q2.2 - **nicht** dasselbe wie `GostJahrgang.halbjahr`, siehe `gostHalbjahrIndex()` in js/wartung.js) |
 | `getGostBlockungsergebnis(ergebnisId)` | `GET /gost/blockungen/zwischenergebnisse/{ergebnisId}` | Konkretes Blockungsergebnis inkl. Schienen/Kurse/Schüler-Zuordnung |
 | `getGostBlockungsdaten(blockungsId)` | `GET /gost/blockungen/{blockungsId}` | Grunddaten einer Blockung inkl. `kurse[]` mit Kursnummer/Suffix - Blockungs-Kurs-IDs sind eine eigene ID-Reihe, siehe Hinweis unten |
+| `getGostAbiturjahrgangLaufbahndaten(abiturjahr)` | `GET /gost/abiturjahrgang/{abiturjahr}/laufbahndaten` | Abiturdaten (inkl. `fachbelegungen[]` mit `fachID`/`abiturFach` 1-4) aller Schüler:innen eines Abiturjahrgangs in einem Aufruf - einzige verlässliche Quelle dafür, ob ein Fach bei einer Person das 3./4. Abiturfach ist (wartung.html "Blockung mit Leistungsdaten abgleichen", Detail-Vergleich) |
 | `getLehrer()` | `GET /lehrer` | Kompletter Lehrer-Katalog (Kürzel/Name je Lehrkraft, schulweit, nicht abschnittsabhängig) - für den optionalen Lehrer-Abgleich in "Blockung mit Leistungsdaten abgleichen" (wartung.html), löst dort die Lehrer-IDs echter Kurse (`KursDaten.lehrer`/`weitereLehrer`) in Kürzel auf |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
@@ -1034,8 +1062,14 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   geladen werden konnte (`ensureLehrerKatalogGeladen()`, ruft bei Bedarf einmalig `SvwsApi.getLehrer()` auf und cacht das Ergebnis in `lehrerById` - seit der PUK-Prüfung (s.u.) als gemeinsamer Helper beider Aufrufer herausgezogen), eine
   Überschneidung der Lehrer-Kürzel (Blockung: `GostBlockungKursLehrer.kuerzel` direkt aus
   `blockungsKursInfo`; echter Kurs: `KursDaten.lehrer`/`weitereLehrer[].idLehrer`, über `lehrerById`
-  aufgelöst). Beide Signale zählen nur als Abweichung, wenn sie auf *beiden* Seiten bestimmbar sind (kein
-  Kürzel-Suffix bzw. kein ladbarer Lehrer-Katalog löst keinen falschen Alarm aus) - bei Abweichung →
+  aufgelöst), sowie - bei Grundkursen - die Abiturfach-Kennzeichnung (AB3/AB4, siehe Fehlerbehebung 16):
+  `abiturFachBySchuelerUndFach` (Schüler-ID → Fach-ID → 1-4, aus
+  `SvwsApi.getGostAbiturjahrgangLaufbahndaten()` - einmalig für die ganze Stufe geladen, *nicht* aus der
+  Blockung oder dem Kurs, die kennen diese Unterscheidung nicht) liefert das erwartete Abiturfach; ist es 3
+  oder 4, wird die erwartete Kursart ("AB3"/"AB4") gegen das `kursart`-Feld des gewählten
+  Leistungsdaten-Eintrags verglichen. Alle drei Signale zählen nur als Abweichung, wenn sie auf *beiden*
+  Seiten bestimmbar sind (kein Kürzel-Suffix, kein ladbarer Lehrer-Katalog bzw. kein bekanntes Abiturfach
+  löst keinen falschen Alarm aus) - bei Abweichung →
   "abweichender Kurs" mit den konkreten Unterschieden im Hinweistext. `alsErsatzVerwendeteKursIds`
   verhindert, dass ein bereits zugeordneter Kurs bei aktivierter Checkbox "beide Richtungen" zusätzlich als
   "zusätzlich in Leistungsdaten" auftaucht (siehe Fehlerbehebung 10). `kursLabelOrId()`/`fachLabel()`
@@ -1130,11 +1164,17 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
     SVWS-Server-Quellcode, Fehlerbehebung 15). Leeres oder unbekanntes Statistikkennzeichen wird selbst als
     Befund gemeldet ("Kursart in Untis-Datei fehlt"/"unbekanntes Statistikkennzeichen"), nicht
     stillschweigend übersprungen - auf Nachfrage ergänzt, da auch das ein Datenqualitätsproblem in der
-    Untis-Datei ist. Rewrite-Regel-Checkbox **"AB3/AB4 als GKS werten"** (Default aus, nur wirksam wenn
-    "Kursart abgleichen" aktiv ist) biegt die übersetzte Kursart vor dem Vergleich entsprechend um - manche
-    Schulen brauchen das, weil AB3/AB4 (3./4. Abiturfach) bei ihnen nicht 1:1 dem in Schild hinterlegten
-    Kursart-Kürzel entspricht. Gewertet wird nur, wenn mindestens einer der Kandidaten-Kurse überhaupt eine
-    Kursart-Angabe in Schild hat (sonst kein aussagekräftiger Vergleich möglich, kein falscher Alarm).
+    Untis-Datei ist. Zwei getrennte Rewrite-Regel-Checkboxen (beide Default aus, nur wirksam wenn
+    "Kursart abgleichen" aktiv ist), weil AB3/AB4 auf beiden Seiten unabhängig voneinander "falsch" gesetzt
+    sein kann (zwei getrennt gepflegte Datenquellen): **"AB3/AB4 laut Untis … als GKS werten"**
+    (`rewriteUntisAb34ZuGks`) biegt die aus dem Statistikkennzeichen übersetzte Kursart vor dem Vergleich
+    entsprechend um, **"AB3/AB4 laut Schild-Leistungsdaten … als GKS werten"** (`rewriteSchildAb34ZuGks`)
+    macht dasselbe mit dem `kursart`-Wert jedes Kandidaten - beide unabhängig voneinander schaltbar, weil
+    sich in der Praxis zeigte, dass es nicht reicht, das nur auf einer Seite zu tun. Gewertet wird nur,
+    wenn mindestens einer der Kandidaten-Kurse überhaupt eine Kursart-Angabe in Schild hat (sonst kein
+    aussagekräftiger Vergleich möglich, kein falscher Alarm); der Hinweistext zeigt bei der Untis-Seite die
+    ggf. umgeschriebene, bei der Schild-Seite weiterhin die unveränderten Rohwerte (die Schild-seitige
+    Rewrite-Regel wirkt nur auf den Vergleich selbst, nicht auf die Anzeige).
 
   Schüler:innen der Stufe, für die keine passende "Studentennummer" in der Untis-Datei gefunden wurde,
   werden nicht geprüft, sondern nur gezählt (`keineUntisZeilenLabels`) - `SharedCode.infoPopoverHtml()`
