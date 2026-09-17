@@ -18,11 +18,11 @@
 <section id="section-connection" class="card">
   <h2>1. Verbindung zur Schild-Datenbank</h2>
   <div class="grid-form">
-    <label>Host <small>(z.B. nightly.svws-nrw.de)</small>
+    <label>Host <small>(z.B. <a href="https://nightly.svws-nrw.de" target="_blank" rel="noopener">nightly.svws-nrw.de</a>)</small>
       <input type="text" id="conn-host" placeholder="nightly.svws-nrw.de" />
     </label>
     <label>Schema
-      <input type="text" id="conn-schema" placeholder="GymAbiLite" />
+      <input type="text" id="conn-schema" placeholder="TestDB_GY" />
     </label>
     <label>Benutzername
       <input type="text" id="conn-username" placeholder="admin" autocomplete="username" />
@@ -37,6 +37,7 @@
       <input type="number" id="conn-abschnitt" min="1" max="2" placeholder="1" />
     </label>
   </div>
+  <button type="button" class="btn-secondary" id="btn-fill-testdata">Testserver-Werte eintragen (nightly, TestDB_GY, admin)</button>
   <button id="btn-connect">Verbinden</button>
   <span id="connect-status" class="status-msg"></span>
 

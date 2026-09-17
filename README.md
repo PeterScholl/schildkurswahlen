@@ -1267,14 +1267,14 @@ ohne Kommandozeile. Am Beispiel des öffentlichen Testservers `nightly.svws-nrw.
    Beispiel-Request-Body-Felder erscheinen editierbar. Für Endpunkte, die eine Anmeldung voraussetzen
    (bei SVWS die meisten), oben auf der Seite auf das Schloss-Symbol bzw. den Button **"Authorize"**
    klicken und Benutzername/Passwort für das gewünschte Schema eintragen (z.B. `admin` mit leerem
-   Passwort auf `nightly.svws-nrw.de`, Schema `GymAbiLite`) – Swagger UI merkt sich das für alle
+   Passwort auf `nightly.svws-nrw.de`, Schema `TestDB_GY`) – Swagger UI merkt sich das für alle
    weiteren "Try it out"-Aufrufe in der Sitzung. Danach Parameter/Body ausfüllen und **"Execute"**
    klicken: Swagger UI zeigt sowohl den tatsächlich gesendeten Request (inkl. Headers, als `curl`-Befehl
    zum Kopieren) als auch die rohe Server-Antwort inkl. HTTP-Status – bei einem Fehler also genau die
    Meldung, die auch dieses Tool in seiner Fehlerausgabe anzeigt (siehe `buildErrorMessage()` in
    `js/svwsApi.js`).
 5. **Ohne Swagger UI, nur im Browser**: `GET`-Endpunkte lassen sich auch direkt als URL aufrufen, z.B.
-   `https://nightly.svws-nrw.de/db/GymAbiLite/faecher` – der Browser fragt dann per HTTP-Basic-Auth-Dialog
+   `https://nightly.svws-nrw.de/db/TestDB_GY/faecher` – der Browser fragt dann per HTTP-Basic-Auth-Dialog
    nach Benutzername/Passwort und zeigt die JSON-Antwort an (ggf. lesbarer mit einer Browser-Erweiterung
    wie einem JSON-Viewer). Für `POST`/`DELETE`-Endpunkte mit Body funktioniert das nicht mehr rein über die
    Adresszeile – dafür ist "Try it out" in Swagger UI der einfachste Weg ohne Kommandozeile.

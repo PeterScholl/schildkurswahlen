@@ -90,6 +90,16 @@
     $("conn-abschnitt").value = state.connection.abschnitt || 1;
   }
 
+  /** Trägt die Zugangsdaten des öffentlichen SVWS-Testservers ein (nightly.svws-nrw.de, Schema
+   *  TestDB_GY, Benutzer admin, Schuljahr 2026 Abschnitt 1) - Passwort bleibt unangetastet. */
+  function fillTestdata() {
+    $("conn-host").value = "nightly.svws-nrw.de";
+    $("conn-schema").value = "TestDB_GY";
+    $("conn-username").value = "admin";
+    $("conn-jahr").value = 2026;
+    $("conn-abschnitt").value = 1;
+  }
+
   async function onConnect() {
     const host = $("conn-host").value.trim();
     const schema = $("conn-schema").value.trim();
@@ -3049,6 +3059,7 @@
   function init() {
     populateConnectionFields();
 
+    $("btn-fill-testdata").addEventListener("click", fillTestdata);
     $("btn-connect").addEventListener("click", onConnect);
     $("section-connection").addEventListener("keydown", (evt) => {
       if (evt.key === "Enter" && evt.target.tagName === "INPUT") {
