@@ -1283,3 +1283,29 @@ ohne Kommandozeile. Am Beispiel des öffentlichen Testservers `nightly.svws-nrw.
    `https://<host>/swagger/`) einmal manuell aufgerufen und die Warnung bestätigt werden – danach
    funktionieren sowohl Swagger UI als auch dieses Tool (das denselben Browser-`fetch()` nutzt) ohne
    weitere Nachfrage, siehe auch den entsprechenden Hinweistext direkt im Tool bei Verbindungsfehlern.
+
+## Deploy
+
+Da das Tool ohne Build-Schritt auskommt, besteht "Deploy" nur aus dem Hochladen der statischen Dateien auf
+den Webspace, auf dem es live läuft (FTPS-Hosting) – bislang von Hand per WinSCP gemacht, jetzt per Skript
+in `deploy/` (September 2026, auf Nachfrage ergänzt – analog zu vorhandenen rclone-Deploy-Skripten auf
+einem anderen Rechner des Nutzers, hier aber WinSCP-basiert, da dort schon im Einsatz).
+
+- **`deploy/deploy.ps1`** – PowerShell-Wrapper, von `deploy/` oder dem Projektwurzelverzeichnis aus
+  aufrufbar (`.\deploy\deploy.ps1`). Findet `WinSCP.com` automatisch (`Program Files (x86)` oder
+  `Program Files`), ruft es mit `deploy/winscp-deploy.txt` auf und übergibt den WinSCP-Site-Namen (Parameter
+  `-SessionName`) sowie den lokalen Projektpfad als Skript-Parameter. Bricht mit einer verständlichen
+  Fehlermeldung ab, wenn `WinSCP.com` fehlt oder der Deploy selbst fehlschlägt (nicht-null Exit-Code).
+- **`deploy/winscp-deploy.txt`** – das eigentliche WinSCP-Skript. `synchronize remote` **ohne** `-delete`:
+  lädt neue/geänderte Dateien hoch, löscht aber nie etwas auf dem Server, das lokal nicht mehr existiert
+  (bewusste Entscheidung – ein "richtiger" Spiegel-Abgleich wäre riskanter, falls die Ausschlussliste mal
+  unvollständig ist). `-filemask` schließt Entwicklungs-/interne Dateien aus (`.git/`, `.claude/`,
+  `deploy/` selbst, `testdaten/`, `PLANUNG.md`, `.gitignore`) – `README.md` wird bewusst **mit**
+  hochgeladen. Ziel ist ein fester Unterordner relativ zum FTP-Wurzelverzeichnis; WinSCP legt ihn bei
+  Bedarf selbst an.
+- **Enthält keine Zugangsdaten**: Weder Passwort noch Host/Nutzername stehen im Skript oder Repo – beide
+  Dateien referenzieren nur den *Namen* einer in WinSCP selbst gespeicherten Site (Host, Port,
+  Verschlüsselung, Nutzername und Passwort liegen ausschließlich dort). Diese Site muss einmalig manuell
+  in WinSCP angelegt werden (GUI: "Neue Site" → Werte eintragen → "Speichern" mit Passwort) – passt zum
+  Grundsatz dieses Projekts, nie Zugangsdaten im Code
+  abzulegen (siehe `js/storage.js`, das aus demselben Grund nie das Schild-DB-Passwort speichert).

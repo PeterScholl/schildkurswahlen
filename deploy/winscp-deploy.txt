@@ -1,0 +1,23 @@
+# WinSCP-Skript für den Deploy von SchildKurswahlen (FTPS-Webspace).
+# Wird nicht direkt aufgerufen, sondern über deploy.ps1 (siehe dort) mit zwei Parametern:
+#   %1% = Name der gespeicherten WinSCP-Site (enthält Host/Nutzer/Port/Verschlüsselung/Passwort)
+#   %2% = lokaler Projektordner (mit abschließendem Backslash)
+#
+# "synchronize remote" ohne "-delete": lädt neue/geänderte Dateien hoch, löscht aber nichts auf dem
+# Server, das lokal nicht (mehr) existiert - bewusst so gewählt, siehe README.md, Abschnitt "Deploy".
+# -filemask schließt Entwicklungs-/interne Dateien aus, die auf dem Server nichts verloren haben
+# (README.md wird bewusst NICHT ausgeschlossen - soll mit hochgeladen werden).
+#
+# Ziel ist /schildkurswahlen/ relativ zum FTP-Wurzelverzeichnis der in %1% gespeicherten Site - WinSCP
+# legt das Verzeichnis bei Bedarf selbst an.
+
+option batch continue
+option confirm off
+option transfer binary
+
+open %1%
+
+synchronize remote -filemask="| .git/; .claude/; deploy/; testdaten/; PLANUNG.md; .gitignore" %2% /schildkurswahlen/
+
+close
+exit

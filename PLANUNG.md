@@ -259,3 +259,23 @@ Tabellenzeilen sichtbar verschoben ("die Darstellung verrückt sich"). Auf Rück
 reines CSS-Hover-Overlay (`.info-popover-content` mit `position: absolute`, siehe css/style.css) - blendet
 sich über den Inhalt statt ihn zu verschieben, per Maus-Hover oder Tastaturfokus (`:focus-within`)
 erreichbar über einen echten `<button>` statt nur Text.
+
+### 8. Deploy-Skript (`deploy/`)
+
+Umgesetzt (September 2026), auf Nachfrage: Der Nutzer hat auf einem anderen (Linux-)Rechner
+rclone-basierte Deploy-Skripte für andere Projekte, wollte etwas Vergleichbares hier unter Windows - bisher
+lief das Hochladen von Hand per WinSCP. `deploy/deploy.ps1` (PowerShell-Wrapper) ruft `WinSCP.com` mit
+`deploy/winscp-deploy.txt` auf; `synchronize remote` ohne `-delete` lädt nur hoch/überschreibt, löscht
+nichts auf dem Server (Nutzer-Entscheidung: sicherer als ein echter Spiegel-Abgleich). Ziel ist
+`/schildkurswahlen/` relativ zum FTP-Wurzelverzeichnis der Site (ursprünglich sollte es das
+Wurzelverzeichnis selbst sein, wurde aber noch während der Umsetzung auf den Unterordner korrigiert).
+Ausgeschlossen vom Upload: `.git/`, `.claude/`, `deploy/` selbst, `testdaten/`, `PLANUNG.md`,
+`.gitignore` - `README.md` wird bewusst mit hochgeladen (auf ausdrücklichen Wunsch, nachdem eine erste
+Fassung es fälschlich ausgeschlossen hatte).
+
+Zugangsdaten (Host, Port, Verschlüsselung, Nutzername) stehen bewusst **nicht** im Skript/Repo - beide
+Dateien referenzieren nur den Namen einer in WinSCP selbst gespeicherten Site (muss einmalig manuell dort
+angelegt werden), passend zum Grundsatz dieses Projekts, nie Zugangsdaten im Code abzulegen (vgl.
+`js/storage.js` beim Schild-DB-Passwort; auf Nachfrage wurden auch die zunächst hier notierten
+personenbezogenen Verbindungsdetails wieder entfernt). Details siehe README.md,
+Abschnitt "Deploy".
