@@ -1660,6 +1660,13 @@
     $("btn-student-filter-alle").addEventListener("click", () => setStudentFilterOnly(["saved", "high", "low", "none", "ignored"]));
     $("btn-course-filter-unsicher").addEventListener("click", () => setCourseFilterOnly(["low", "none"]));
     $("btn-course-filter-alle").addEventListener("click", () => setCourseFilterOnly(["saved", "high", "low", "none", "ignored"]));
+
+    // Export-Buttons (CSV/XLSX) für die Ergebnis-/Abgleich-Tabellen - siehe js/export.js. Die interaktiven
+    // Matching-Tabellen (Schritt 4/5, voller Dropdowns/Inputs je Zeile) bekommen bewusst keine, da ihr
+    // Inhalt aus Eingabeelementen statt aus exportierbaren Ergebnis-Daten besteht.
+    ExportUtils.attachExportButtons($("missing-students-table"), "schueler-ohne-forms-abgabe");
+    ExportUtils.attachExportButtons($("transfer-preview-table"), "uebertragung-vorschau");
+    ExportUtils.attachExportButtons($("kurse-ohne-wahl-table"), "kurse-ohne-forms-wahl");
   }
 
   document.addEventListener("DOMContentLoaded", init);

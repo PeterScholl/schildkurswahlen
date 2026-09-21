@@ -279,3 +279,24 @@ angelegt werden), passend zum Grundsatz dieses Projekts, nie Zugangsdaten im Cod
 `js/storage.js` beim Schild-DB-Passwort; auf Nachfrage wurden auch die zunächst hier notierten
 personenbezogenen Verbindungsdetails wieder entfernt). Details siehe README.md,
 Abschnitt "Deploy".
+
+### 9. CSV-/XLSX-Export für Ergebnis-Tabellen (`js/export.js`)
+
+Umgesetzt (September 2026), auf Nachfrage: Button oberhalb der Ergebnis-/Abgleich-Tabellen (rechtsbündig,
+kompakte Icon-Buttons "⬇ CSV"/"⬇ XLSX") zum Exportieren des aktuell angezeigten Inhalts. Neues, von beiden
+Seiten genutztes Modul `js/export.js` (`window.ExportUtils`) - ein Aufruf
+(`ExportUtils.attachExportButtons(table, filenameBase)`) pro Tabelle in `init()` reicht, kein HTML-Markup
+nötig. Liest den Tabelleninhalt bei Klick direkt aus dem DOM (aktueller Stand inkl. Filter/Sortierung),
+entfernt dabei automatisch interaktive/dekorative Elemente (Checkboxen, Buttons, Spaltenfilter-Popover,
+(i)-Info-Overlays) und komplett leer gewordene Spalten - keine manuelle Spalten-Konfiguration pro Tabelle
+nötig.
+
+Für XLSX wird die ohnehin schon vendorte SheetJS-Bibliothek (`js/vendor/xlsx.full.min.js`, bisher nur für
+den Forms-Import in `index.html` genutzt, kann aber auch schreiben) wiederverwendet statt ein eigener
+ZIP/OOXML-Schreiber gebaut - dafür bindet jetzt auch `wartung.html` diese Datei ein. CSV wird selbst gebaut
+(Semikolon-Trennzeichen für deutsches Excel, RFC-4180-Quoting, UTF-8-BOM für korrekte Umlaute).
+
+Eingerichtet für die tatsächlichen Ergebnis-Tabellen (5 in `wartung.html`, 3 in `index.html`) - bewusst
+nicht für reine Konfigurations-/Editier-Tabellen (Split-Zeilen) oder die interaktiven
+Schüler-/Kurs-Matching-Tabellen (Schritt 4/5 in `index.html`, Zeilen voller Dropdowns/Inputs statt fester
+Ergebnis-Daten). Details siehe README.md, Abschnitt `js/export.js`.

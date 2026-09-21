@@ -381,7 +381,9 @@ darauf hin.
   funktioniert auch per Doppelklick auf `index.html` (`file://`-Protokoll), wo ES-Module oft an
   CORS-Beschränkungen scheitern.
 - **SheetJS lokal vorhanden** (`js/vendor/xlsx.full.min.js`), nicht per CDN zur Laufzeit geladen – damit
-  das Tool auch ohne Internetzugang bzw. hinter Schul-Firewalls zuverlässig läuft.
+  das Tool auch ohne Internetzugang bzw. hinter Schul-Firewalls zuverlässig läuft. Ursprünglich nur für
+  `index.html` (xlsx-Einlesen des Forms-Exports), seit dem XLSX-Tabellenexport (`js/export.js`) auch von
+  `wartung.html` eingebunden – SheetJS kann auch schreiben, nicht nur lesen.
 - **Zugangsdaten werden nirgends gespeichert**: Benutzername darf persistiert werden (reine Bequemlichkeit
   beim erneuten Öffnen), das Passwort existiert ausschließlich als lokale Variable in `svwsApi.js` für die
   Dauer der Sitzung. `storage.js` besitzt zusätzlich eine defensive `stripSecrets()`-Funktion, die vor
@@ -673,9 +675,10 @@ SchildKurswahlen/
   index.html                  UI-Grundgerüst des Wizards (8 Abschnitte)
   wartung.html                 UI-Grundgerüst der Wartungsseite (Verbindung, Schild-Daten laden, Wartung)
   css/style.css                Styling (hell/dunkel automatisch je nach Systemeinstellung), von beiden Seiten genutzt
-  js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing, nur index.html)
+  js/vendor/xlsx.full.min.js   Vendorte SheetJS-Bibliothek (xlsx-Parsing/-Schreiben), von beiden Seiten genutzt
   js/svwsApi.js                SVWS-REST-Client, von beiden Seiten genutzt
   js/sharedCode.js              Zustandslose Utility-Funktionen, von beiden Seiten genutzt (s.u.)
+  js/export.js                  CSV-/XLSX-Export für Ergebnis-Tabellen, von beiden Seiten genutzt (s.u.)
   js/formsImport.js            xlsx-Einlesen, Spalten-Heuristik, Kurswahl-Extraktion (nur index.html)
   js/matching.js                Fuzzy-Matching + Verwaltung der persistenten Matching-Tabellen (nur index.html)
   js/storage.js                localStorage-Autosave + JSON-Export/Import (ohne Zugangsdaten), von beiden Seiten genutzt
@@ -715,6 +718,52 @@ Verhältnis zum Nutzen: Verbindungsaufbau (`onConnect()`, `populateConnectionFie
 `renderStatusKatalog()`), "Neuen Kurs anlegen"-Dialog, Speichern/Laden (`onExportJson()` etc.),
 `onLoadSchildData()`/`refreshKursBelegung()` (unterscheiden sich zudem inhaltlich zwischen den Seiten -
 `wartung.js` aktualisiert z.B. zusätzlich die Split-Tabellen).
+
+### `js/export.js`
+
+CSV-/XLSX-Export für Ergebnis-/Abgleich-Tabellen (September 2026, auf Nachfrage ergänzt: "einige Tabellen
+die das Ergebnis einer Prüfung oder eines Abgleiches sind" - oberhalb der Tabelle rechtsbündig zwei
+kompakte Icon-Buttons statt separater Export-Dialoge). Als `window.ExportUtils` exportiert, von beiden
+Seiten eingebunden. Eine einzige Funktion pro Tabelle reicht zum Einrichten:
+
+- **`attachExportButtons(table, filenameBase)`** – fügt direkt vor der Tabelle (bzw. deren
+  `.table-scroll`-Wrapper, falls vorhanden) eine `.table-export-bar` mit zwei Buttons ein ("⬇ CSV"/
+  "⬇ XLSX", CSS in `css/style.css`) und verdrahtet sie. Kein HTML-Markup pro Tabelle nötig - in `app.js`/
+  `wartung.js` genügt je ein Aufruf in `init()` (`ExportUtils.attachExportButtons($("puk-table"),
+  "puk-abgleich")` usw.). No-op, wenn `table` `null`/`undefined` ist, statt einen Fehler zu werfen.
+- **`readTable(table)`** (intern) liest den Tabelleninhalt bei Klick direkt aus dem *aktuellen* DOM-Stand
+  (nicht aus dem zugrundeliegenden Ergebnis-Array) - exportiert also immer genau das, was gerade sichtbar
+  ist, inklusive aktiver Spaltenkopf-Filter/Sortierung, ohne dass jede Tabelle dafür eine eigene
+  Export-Anbindung bräuchte. Entfernt beim Auslesen automatisch, was keine exportierbaren Daten sind:
+  Auswahl-Checkboxen, Aktions-Buttons (z.B. "Löschen"/"Übernehmen"), Spaltenfilter-Popover
+  (`.col-filter-wrap`, inkl. der darin versteckten Checkbox-Liste) und die (i)-Info-Overlays
+  (`.info-popover`) - behält aber z.B. `.th-sort-btn`-Buttons in Kopfzeilen, deren Text die eigentliche
+  Spaltenüberschrift ist. Spalten, die dadurch sowohl im Kopf als auch in *jeder* Datenzeile leer sind (z.B.
+  eine reine Auswahl-Checkbox-Spalte ganz ohne Überschrift), werden komplett entfernt - deshalb ist pro
+  Tabelle keinerlei manuelle Spalten-Konfiguration nötig.
+- **`exportTableToCsv(table, filenameBase)`** – baut die Datei selbst (kein Vendor-Code nötig): Semikolon
+  als Trennzeichen (deutsche Excel-Konvention - mit Komma reißt ein unter deutschem Gebietsschema per
+  Doppelklick geöffnetes CSV in Excel sonst jede Zeile in eine einzige Spalte statt sie zu splitten,
+  dieselbe Überlegung wie schon bei der Untis-Trennzeichen-Erkennung), Felder nach RFC 4180 gequotet, und
+  ein führendes UTF-8-BOM (`﻿`), damit Excel unter Windows Umlaute korrekt anzeigt statt sie als
+  ANSI/Windows-1252 misszuinterpretieren.
+- **`exportTableToXlsx(table, filenameBase)`** – nutzt die ohnehin schon für den Forms-Import vendorte
+  SheetJS-Bibliothek (`js/vendor/xlsx.full.min.js`, kann auch schreiben, nicht nur lesen) statt selbst
+  einen ZIP/OOXML-Schreiber zu bauen: `XLSX.utils.aoa_to_sheet()` + `XLSX.write()` liefert ein
+  `ArrayBuffer`, das wie beim CSV-Export per `Blob`+`<a download>` heruntergeladen wird. Meldet sich in der
+  Konsole (statt einen kryptischen Fehler zu werfen), falls die Seite `xlsx.full.min.js` nicht eingebunden
+  hat.
+- Dateinamen bekommen automatisch einen Zeitstempel angehängt (`${filenameBase}-JJJJ-MM-TT.csv/.xlsx`,
+  wie schon bei `Storage.exportJson()`).
+
+Eingerichtet für: `wartung.html` - "Leistungsdaten mit leerem Kurs", "Leere Kurse suchen",
+"Blockung mit Leistungsdaten abgleichen", "Abgleich Untis mit Leistungsdaten", "PUK prüfen";
+`index.html` - "Schüler ohne Forms-Abgabe" (Schritt 4a), "Übertragung" Vorschau-Tabelle (Schritt 6),
+"Kurse ohne Forms-Wahl" (Schritt 8). Bewusst **nicht** eingerichtet: die reinen Konfigurations-/
+Editier-Tabellen (Split-Zeilen, Autosplit-Vorschläge in `wartung.html`) sowie die interaktiven
+Schüler-/Kurs-Matching-Tabellen in `index.html` (Schritt 4/5, Zeilen voller Dropdowns/Inputs statt fester
+Ergebnis-Daten) - für Letztere würde `readTable()` nach dem automatischen Entfernen der Eingabeelemente
+größtenteils leere Zellen liefern.
 
 ### `js/svwsApi.js`
 

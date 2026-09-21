@@ -3159,6 +3159,15 @@
 
     $("btn-run-puk").addEventListener("click", onRunPukCheck);
 
+    // Export-Buttons (CSV/XLSX) für die Ergebnis-/Abgleich-Tabellen - siehe js/export.js. Reine
+    // Konfigurations-/Editier-Tabellen (Split-Zeilen, Autosplit-Vorschläge) bekommen bewusst keine, da ihr
+    // Inhalt aus Eingabefeldern besteht statt aus exportierbaren Ergebnis-Daten.
+    ExportUtils.attachExportButtons($("check-leerer-kurs-table"), "leistungsdaten-leerer-kurs");
+    ExportUtils.attachExportButtons($("leere-kurse-table"), "leere-kurse");
+    ExportUtils.attachExportButtons($("blockung-abgleich-table"), "blockung-abgleich");
+    ExportUtils.attachExportButtons($("untis-abgleich-table"), "untis-abgleich");
+    ExportUtils.attachExportButtons($("puk-table"), "puk-abgleich");
+
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);
     $("btn-reset-state").addEventListener("click", onResetState);
