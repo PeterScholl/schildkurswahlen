@@ -516,6 +516,54 @@
 
   </details>
 
+  <details class="wartung-baustein">
+  <summary><h3>Einwilligung Lernplattform prüfen</h3></summary>
+  <p class="hint">
+    Listet für eine ausgewählte Lernplattform (z.B. "IServ", "Moodle", "Teams" - schulspezifischer Katalog)
+    alle aktuell geladenen Schüler:innen mit ihrem Einwilligungsstatus zur <strong>Nutzung</strong> dieser
+    Plattform auf: <strong>zugestimmt</strong> oder <strong>abgelehnt</strong> (je nachdem, was zu dieser
+    Lernplattform hinterlegt ist), sonst <strong>keine Einstellung getroffen</strong> (noch gar kein
+    Datensatz dazu vorhanden). Das serverseitige Feld "abgefragt" (soll eigentlich anzeigen, ob überhaupt
+    schon nachgefragt wurde) fließt bewusst <strong>nicht</strong> in diese Einstufung ein - es wird in der
+    Praxis nicht zuverlässig gepflegt -, steht aber zur eigenen Einschätzung in einer eigenen Spalte.
+    Über die Checkboxen lässt sich die Anzeige auf einzelne Status eingrenzen, z.B. um nur die noch offenen
+    Fälle zu sehen. Benutzername/Initialkennwort der Lernplattform werden bewusst nicht angezeigt (sensible
+    Zugangsdaten, für diese Prüfung nicht nötig). Rein lesende Prüfung ohne Lösch-/Änderungsfunktion.
+  </p>
+
+  <div class="grid-form">
+    <label>Lernplattform
+      <select id="lernplattform-select" disabled><option value="">(erst Schild-Daten laden)</option></select>
+    </label>
+  </div>
+  <div class="checkbox-row">
+    <label><input type="checkbox" id="lernplattform-filter-zugestimmt" checked /> Zugestimmt</label>
+    <label><input type="checkbox" id="lernplattform-filter-abgelehnt" checked /> Abgelehnt</label>
+    <label><input type="checkbox" id="lernplattform-filter-keine" checked /> Keine Einstellung getroffen</label>
+  </div>
+  <button id="btn-run-lernplattform" disabled>Prüfen</button>
+  <span id="lernplattform-status" class="status-msg"></span>
+  <progress id="lernplattform-progress" class="progress-bar hidden" value="0" max="100"></progress>
+
+  <div>
+    <input type="text" id="lernplattform-suche" placeholder="Suchen (Schüler, Klasse) …" />
+  </div>
+  <div class="table-scroll">
+    <table id="lernplattform-table">
+      <thead>
+        <tr>
+          <th>Schüler</th>
+          <th>Klasse</th>
+          <th>Status</th>
+          <th>Abgefragt</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  </details>
+
   <datalist id="kurs-datalist-anzahl"></datalist>
   <datalist id="kursart-datalist"></datalist>
 </section>

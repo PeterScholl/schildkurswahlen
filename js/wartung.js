@@ -28,6 +28,7 @@
   let schildKlassen = [];
   let schildKursarten = []; // Katalog gültiger Kursarten (für "Neuen Kurs anlegen"-Dialog)
   let schildJahrgaenge = []; // Katalog aller Jahrgänge (für "Neuen Kurs anlegen"-Dialog)
+  let schildLernplattformen = []; // Katalog der Lernplattformen (für "Einwilligung Lernplattform prüfen")
   let schuelerById = new Map();
   let kursById = new Map();
   let schuelerIdToKlasse = new Map(); // Schüler-ID -> Klassen-Kürzel, aus KlassenDaten.schueler[] gebaut
@@ -226,6 +227,7 @@
       renderSplitKlasseTable();
       populateBlockungAbgleichStufen();
       populateUntisAbgleichJahrgang();
+      populateLernplattformSelect();
     } catch (err) {
       setStatus(statusEl, err.message, "error", err);
     }
@@ -1828,7 +1830,7 @@
       console.warn("Abiturjahrgänge konnten nicht geladen werden (evtl. keine gymnasiale Oberstufe):", err);
       return;
     }
-    select.innerHTML +=
+    select.innerHTML =
       '<option value="">(wählen)</option>' +
       gostJahrgaenge
         .map(
@@ -3017,6 +3019,136 @@
       .join("");
   }
 
+  // ---------- 10. Einwilligung Lernplattform prüfen ----------
+  // Schulspezifischer Katalog (SvwsApi.getLernplattformen()) + je Schüler:in ein Datensatz pro
+  // Lernplattform, zu der überhaupt eine Abfrage stattfand (SvwsApi.getSchuelerLernplattformen()) - nicht
+  // abschnittsgebunden (die Einwilligung gilt schuljahresübergreifend, unabhängig vom aktuell geladenen
+  // Abschnitt). Geprüft wird hier bewusst nur die Einwilligung zur *Nutzung* (`einwilligungNutzung`),
+  // nicht die getrennten Einwilligungen zu Audio-/Videokonferenz, die derselbe Datensatz zusätzlich trägt
+  // - auf Nachfrage bewusst so eingegrenzt. Benutzername/Initialkennwort (ebenfalls im Datensatz enthalten)
+  // werden hier nirgends ausgelesen/angezeigt - sensible Zugangsdaten, für diese Prüfung nicht nötig.
+
+  let lernplattformResults = []; // [{schuelerId, schuelerLabel, klasse, status}]
+
+  async function populateLernplattformSelect() {
+    const select = $("lernplattform-select");
+    select.innerHTML = '<option value="">(wählen)</option>';
+    try {
+      schildLernplattformen = await SvwsApi.getLernplattformen();
+    } catch (err) {
+      schildLernplattformen = [];
+      select.innerHTML = '<option value="">(Katalog konnte nicht geladen werden)</option>';
+      console.warn("Lernplattformen konnten nicht geladen werden:", err);
+      return;
+    }
+    select.innerHTML =
+      '<option value="">(wählen)</option>' +
+      schildLernplattformen.map((lp) => `<option value="${lp.id}">${escapeHtml(lp.bezeichnung)}</option>`).join("");
+    select.disabled = schildLernplattformen.length === 0;
+    updateLernplattformButtonState();
+  }
+
+  function updateLernplattformButtonState() {
+    $("btn-run-lernplattform").disabled = $("lernplattform-select").value === "";
+  }
+
+  async function onRunLernplattform() {
+    const statusEl = $("lernplattform-status");
+    const idLernplattform = Number($("lernplattform-select").value);
+    const lernplattform = schildLernplattformen.find((lp) => lp.id === idLernplattform);
+    if (!lernplattform) {
+      setStatus(statusEl, "Bitte eine Lernplattform auswählen.", "error");
+      return;
+    }
+
+    const progressEl = $("lernplattform-progress");
+    $("btn-run-lernplattform").disabled = true;
+    progressEl.max = schildSchueler.length;
+    progressEl.value = 0;
+    progressEl.classList.remove("hidden");
+
+    let processed = 0;
+    let fehler = 0;
+    const results = [];
+    await mapWithConcurrency(schildSchueler, 6, async (s) => {
+      try {
+        const eintraege = await SvwsApi.getSchuelerLernplattformen(s.id);
+        const eintrag = (eintraege || []).find((e) => e.idLernplattform === idLernplattform);
+        // "einwilligungAbgefragt" wird real nicht zuverlässig gepflegt (siehe Fehlerbehebung in
+        // README.md - beobachtet: false, obwohl einwilligungNutzung bereits einen echten Wert trägt) und
+        // fließt deshalb bewusst NICHT in die Status-Einstufung ein: existiert gar kein Datensatz zu
+        // dieser Lernplattform, gilt das als "keine Einstellung getroffen"; existiert einer, entscheidet
+        // einzig einwilligungNutzung zwischen "zugestimmt" und "abgelehnt". Der Rohwert wird trotzdem in
+        // einer eigenen Spalte angezeigt (nicht stillschweigend verworfen), falls er im Einzelfall doch
+        // mal aussagekräftig ist.
+        let status;
+        if (!eintrag) {
+          status = "keine Einstellung getroffen";
+        } else if (eintrag.einwilligungNutzung) {
+          status = "zugestimmt";
+        } else {
+          status = "abgelehnt";
+        }
+        results.push({
+          schuelerId: s.id,
+          schuelerLabel: schuelerLabel(s),
+          klasse: schuelerIdToKlasse.get(s.id) || "",
+          status,
+          abgefragt: eintrag ? (eintrag.einwilligungAbgefragt ? "Ja" : "Nein") : "",
+        });
+      } catch (e) {
+        fehler++;
+      } finally {
+        processed++;
+        progressEl.value = processed;
+        setStatus(statusEl, `Prüfe ${processed} / ${schildSchueler.length} Schüler:innen …`, "");
+      }
+    });
+
+    progressEl.classList.add("hidden");
+    lernplattformResults = results;
+    renderLernplattformTable();
+    $("btn-run-lernplattform").disabled = false;
+    setStatus(
+      statusEl,
+      `${results.length} Schüler:innen geprüft für "${lernplattform.bezeichnung}"` +
+        (fehler ? ` (${fehler} Schüler:innen konnten nicht geprüft werden)` : "") +
+        ".",
+      "ok"
+    );
+  }
+
+  /** Wendet den Status-Checkbox-Filter und die Freitextsuche auf lernplattformResults an. */
+  function filteredLernplattformRows() {
+    const zeigeZugestimmt = $("lernplattform-filter-zugestimmt").checked;
+    const zeigeAbgelehnt = $("lernplattform-filter-abgelehnt").checked;
+    const zeigeKeine = $("lernplattform-filter-keine").checked;
+    const suchtext = $("lernplattform-suche").value.trim().toLowerCase();
+
+    return lernplattformResults.filter((r) => {
+      if (r.status === "zugestimmt" && !zeigeZugestimmt) return false;
+      if (r.status === "abgelehnt" && !zeigeAbgelehnt) return false;
+      if (r.status === "keine Einstellung getroffen" && !zeigeKeine) return false;
+      if (suchtext && ![r.schuelerLabel, r.klasse].some((v) => v.toLowerCase().includes(suchtext))) return false;
+      return true;
+    });
+  }
+
+  function renderLernplattformTable() {
+    const tbody = document.querySelector("#lernplattform-table tbody");
+    tbody.innerHTML = filteredLernplattformRows()
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.schuelerLabel)}</td>
+        <td>${escapeHtml(r.klasse)}</td>
+        <td>${escapeHtml(r.status)}</td>
+        <td>${escapeHtml(r.abgefragt)}</td>
+      </tr>`
+      )
+      .join("");
+  }
+
   // ---------- 4. Speichern / Laden ----------
   // Identisch zu Schritt 7 in index.html/js/app.js (derselbe Storage.exportJson()/importJson(), derselbe
   // geteilte state) - bewusst als eigene Kopie hier, damit man für Export/Import/Reset nicht extra auf die
@@ -3159,6 +3291,13 @@
 
     $("btn-run-puk").addEventListener("click", onRunPukCheck);
 
+    $("lernplattform-select").addEventListener("change", updateLernplattformButtonState);
+    $("btn-run-lernplattform").addEventListener("click", onRunLernplattform);
+    ["lernplattform-filter-zugestimmt", "lernplattform-filter-abgelehnt", "lernplattform-filter-keine"].forEach((id) =>
+      $(id).addEventListener("change", renderLernplattformTable)
+    );
+    $("lernplattform-suche").addEventListener("input", renderLernplattformTable);
+
     // Export-Buttons (CSV/XLSX) für die Ergebnis-/Abgleich-Tabellen - siehe js/export.js. Reine
     // Konfigurations-/Editier-Tabellen (Split-Zeilen, Autosplit-Vorschläge) bekommen bewusst keine, da ihr
     // Inhalt aus Eingabefeldern besteht statt aus exportierbaren Ergebnis-Daten.
@@ -3167,6 +3306,7 @@
     ExportUtils.attachExportButtons($("blockung-abgleich-table"), "blockung-abgleich");
     ExportUtils.attachExportButtons($("untis-abgleich-table"), "untis-abgleich");
     ExportUtils.attachExportButtons($("puk-table"), "puk-abgleich");
+    ExportUtils.attachExportButtons($("lernplattform-table"), "lernplattform-einwilligung");
 
     $("btn-export-json").addEventListener("click", onExportJson);
     $("import-json-input").addEventListener("change", onImportJson);

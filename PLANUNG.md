@@ -300,3 +300,28 @@ Eingerichtet für die tatsächlichen Ergebnis-Tabellen (5 in `wartung.html`, 3 i
 nicht für reine Konfigurations-/Editier-Tabellen (Split-Zeilen) oder die interaktiven
 Schüler-/Kurs-Matching-Tabellen (Schritt 4/5 in `index.html`, Zeilen voller Dropdowns/Inputs statt fester
 Ergebnis-Daten). Details siehe README.md, Abschnitt `js/export.js`.
+
+### 10. Neuer Bereich "Einwilligung Lernplattform prüfen" (wartung.html)
+
+Umgesetzt (September 2026), auf Nachfrage ("Kannst du dir vorstellen..."): Vor der Umsetzung im
+SVWS-Server-Quellcode recherchiert, ob es das Konzept "Einwilligung zu einer Lernplattform" dort überhaupt
+gibt - ja, vollständig: schulspezifischer Lernplattform-Katalog (`GET /schule/lernplattformen`) sowie pro
+Schüler:in ein Datensatz je Lernplattform (`GET /schueler/{id}/lernplattformen`) mit getrennten
+Einwilligungs-Flags für Nutzung, Audio- und Videokonferenz. Auf Nachfrage bewusst nur auf die
+Nutzungs-Einwilligung eingegrenzt (nicht Audio/Video). Neuer Baustein: Lernplattform per Dropdown wählen,
+"Prüfen" listet alle aktuell geladenen Schüler:innen mit Status **zugestimmt**/**abgelehnt**/**keine
+Einstellung getroffen**, per Checkboxen ein-/ausblendbar, dazu eine Namens-/Klassen-Suche und
+CSV-/XLSX-Export wie bei den anderen Ergebnis-Tabellen. Benutzername/Initialkennwort (Teil desselben
+API-Datensatzes) werden bewusst nicht ausgelesen/angezeigt.
+
+**Zwei reale Bugs beim ersten Testlauf gefunden und behoben** (Details siehe README.md, Fehlerbehebungen
+17+18):
+
+- Die Status-Einstufung verließ sich zunächst auf `einwilligungAbgefragt` - ein realer Testdatensatz zeigte
+  aber `einwilligungAbgefragt: false` bei gleichzeitig echtem `einwilligungNutzung: true`. Auf Nachfrage
+  ("bitte einwilligungAbgefragt gar nicht berücksichtigen", dann "oder separat anzeigen") fließt das Feld
+  jetzt gar nicht mehr in die Einstufung ein, steht aber in einer eigenen Spalte.
+- Beim Testen auffällig geworden: Die Lernplattform-Auswahl (und, wie sich herausstellte, auch die schon
+  vorhandene Stufen-Auswahl beim Blockung-Abgleich) zeigte die Platzhalter-Option "(wählen)" doppelt -
+  `select.innerHTML += ...` hängte die Optionen an eine bereits vorhandene Platzhalter-Option an, statt sie
+  zu ersetzen. In beiden Funktionen auf `select.innerHTML = ...` korrigiert.

@@ -178,9 +178,9 @@ braucht jede Seite ihre eigene Verbindungseingabe).
 
 Struktur wie der Wizard: **1. Verbindung** und **2. Schild-Daten laden** (Schüler/Kurse/Fächer/Klassen/
 Kursarten/Jahrgänge, gefiltert nach demselben Status-Filter wie in Schritt 1 des Wizards), danach
-**3. Wartung** mit sieben Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
+**3. Wartung** mit acht Bausteinen. Jeder Baustein ist ein natives `<details>`-Element (Klasse
 `wartung-baustein` in `css/style.css`) – auf-/zuklappbar über einen Klick auf die Überschrift, standardmäßig
-eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sieben Bausteine erschlägt:
+eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller acht Bausteine erschlägt:
 
 - **"Leistungsdaten mit leerem Kurs"** – findet Leistungsdaten-Einträge, die eine Kursart tragen (also
   ursprünglich einem Kurs zugeordnet waren), deren Kurs-Verknüpfung aber fehlt *oder* auf einen nicht mehr
@@ -358,6 +358,18 @@ eingeklappt, damit die Seite nicht sofort mit dem gesamten Erklärtext aller sie
   Drüberfahren bis zu 10 Namen der betroffenen Personen zeigt). Die Ergebnistabelle lässt sich im Spaltenkopf **Klasse** filtern
   (Checkbox-Popover, dasselbe Excel-artige Muster wie bei "Leere Kurse suchen"). Rein lesende Prüfung ohne
   Lösch-/Änderungsfunktion.
+
+- **"Einwilligung Lernplattform prüfen"** – listet für eine ausgewählte Lernplattform (schulspezifischer
+  Katalog, z.B. "IServ"/"Moodle"/"Teams") alle aktuell geladenen Schüler:innen mit ihrem
+  Einwilligungsstatus zur *Nutzung* dieser Plattform auf: **zugestimmt**, **abgelehnt**, oder **keine
+  Einstellung getroffen** (noch gar kein Datensatz zu dieser Lernplattform vorhanden). Drei Checkboxen
+  grenzen die Anzeige auf einzelne Status ein, ein Suchfeld filtert zusätzlich nach Name/Klasse. Das
+  serverseitige Feld "abgefragt" (soll eigentlich anzeigen, ob überhaupt schon nachgefragt wurde) fließt
+  bewusst **nicht** in die Status-Einstufung ein – es war in der Praxis nicht zuverlässig gesetzt (ein
+  realer Fall zeigte `einwilligungAbgefragt: false` bei gleichzeitig echtem `einwilligungNutzung: true`) –
+  steht aber unverändert in einer eigenen Spalte, falls es im Einzelfall doch hilft. Benutzername/
+  Initialkennwort der Lernplattform (Teil desselben Datensatzes) werden bewusst nicht angezeigt – sensible
+  Zugangsdaten, für diese Prüfung nicht nötig. Rein lesende Prüfung ohne Lösch-/Änderungsfunktion.
 
 Danach **4. Speichern / Laden** – inhaltlich identisch zu Schritt 7 im Kurswahlen-Abgleich (derselbe
 geteilte Zustand, derselbe Export/Import/Reset), nur als eigener Bereich hier auf der Wartungsseite, damit
@@ -668,6 +680,30 @@ dokumentiert, weil die Ursachen nicht offensichtlich sind und für künftige Än
     Person das Fach dort tatsächlich als 3./4. Abiturfach führt (sonst keine Aussage möglich, kein falscher
     Alarm).
 
+17. **"Einwilligung Lernplattform prüfen" zeigte bei allen Schüler:innen "keine Einstellung getroffen"**,
+    obwohl real bereits Einwilligungen vorlagen.
+    Ursache, mit dem Nutzer anhand eines echten Datensatzes verifiziert (`GET
+    /schueler/{id}/lernplattformen`): Die erste Fassung stufte `einwilligungAbgefragt === false` immer als
+    "keine Einstellung getroffen" ein, unabhängig vom Wert von `einwilligungNutzung`. Der konkrete
+    Testfall zeigte aber `einwilligungAbgefragt: false` bei gleichzeitig `einwilligungNutzung: true` - das
+    "abgefragt"-Feld wird in der Praxis offenbar nicht zuverlässig gepflegt, obwohl die eigentliche
+    Einwilligung (`einwilligungNutzung`) bereits einen echten, verlässlichen Wert trägt.
+    **Fix:** `einwilligungAbgefragt` fließt jetzt gar nicht mehr in die Status-Einstufung ein - kein
+    Datensatz zu der Lernplattform → "keine Einstellung getroffen", sonst entscheidet ausschließlich
+    `einwilligungNutzung`. Der Rohwert von `einwilligungAbgefragt` wird trotzdem in einer eigenen Spalte
+    "Abgefragt" angezeigt statt stillschweigend verworfen zu werden (auf Nachfrage: "oder separat
+    anzeigen").
+
+18. **Mehrere Dropdowns in wartung.html zeigten die Platzhalter-Option "(wählen)" doppelt** (u.a. die neue
+    Lernplattform-Auswahl, aber auch die schon vorhandene Stufen-Auswahl beim Blockung-Abgleich).
+    Ursache: Die jeweilige `populate*()`-Funktion setzt `select.innerHTML` beim Start auf eine
+    Platzhalter-Option (damit während des Ladens nicht die letzte, evtl. veraltete Liste stehen bleibt),
+    hängt die eigentlichen Optionen nach dem Laden aber mit `select.innerHTML += ...` an, statt den Inhalt
+    zu *ersetzen* - die anfängliche Platzhalter-Option blieb dadurch zusätzlich zu der im neuen HTML erneut
+    enthaltenen Platzhalter-Option stehen.
+    **Fix:** In `populateBlockungAbgleichStufen()` und `populateLernplattformSelect()` (`js/wartung.js`)
+    `select.innerHTML +=` durch `select.innerHTML =` ersetzt.
+
 ## Programmstruktur
 
 ```text
@@ -795,6 +831,8 @@ Zustandsloser REST-Client (bis auf `baseUrl`/Auth-Header im Modul-Scope). Wichti
 | `getGostBlockungsdaten(blockungsId)` | `GET /gost/blockungen/{blockungsId}` | Grunddaten einer Blockung inkl. `kurse[]` mit Kursnummer/Suffix - Blockungs-Kurs-IDs sind eine eigene ID-Reihe, siehe Hinweis unten |
 | `getGostAbiturjahrgangLaufbahndaten(abiturjahr)` | `GET /gost/abiturjahrgang/{abiturjahr}/laufbahndaten` | Abiturdaten (inkl. `fachbelegungen[]` mit `fachID`/`abiturFach` 1-4) aller Schüler:innen eines Abiturjahrgangs in einem Aufruf - einzige verlässliche Quelle dafür, ob ein Fach bei einer Person das 3./4. Abiturfach ist (wartung.html "Blockung mit Leistungsdaten abgleichen", Detail-Vergleich) |
 | `getLehrer()` | `GET /lehrer` | Kompletter Lehrer-Katalog (Kürzel/Name je Lehrkraft, schulweit, nicht abschnittsabhängig) - für den optionalen Lehrer-Abgleich in "Blockung mit Leistungsdaten abgleichen" (wartung.html), löst dort die Lehrer-IDs echter Kurse (`KursDaten.lehrer`/`weitereLehrer`) in Kürzel auf |
+| `getLernplattformen()` | `GET /schule/lernplattformen` | Schulspezifischer Katalog der Lernplattformen (z.B. "IServ") - für "Einwilligung Lernplattform prüfen" (wartung.html) |
+| `getSchuelerLernplattformen(schuelerId)` | `GET /schueler/{id}/lernplattformen` | Einwilligungs-Datensätze einer/eines Schülerin/Schülers zu allen Lernplattformen, zu denen es einen Datensatz gibt (leeres Array, wenn noch keiner existiert) - nicht abschnittsgebunden; für "Einwilligung Lernplattform prüfen" (wartung.html) |
 
 Fehler werden als verständliche deutsche Fehlermeldungen geworfen (401/403/404/5xx sowie
 Netzwerkfehler mit Zertifikats-Hinweis). `buildErrorMessage()` hängt zusätzlich die eigentliche
@@ -1259,6 +1297,20 @@ Datei-lokalen Laufzeit-Zustand braucht, passend zum bestehenden Stil des Projekt
   (Fach/Kursart) bzw. "Leistungsdaten mit leerem Kurs" (Kursart) - baut die Checkbox-Liste aus den
   *tatsächlich* gefundenen `pukResults`, nicht dem vollen Klassenkatalog. Rein lesend, keine
   Lösch-/Änderungsfunktion.
+- **"Einwilligung Lernplattform prüfen"**: `populateLernplattformSelect()` lädt nach "Schild-Daten laden"
+  den Lernplattform-Katalog (`SvwsApi.getLernplattformen()`) in die Auswahl - unabhängig vom
+  Status-Filter/Abschnitt, da die Einwilligung nicht abschnittsgebunden ist. `onRunLernplattform()` holt
+  dann konkurrenzbegrenzt (`mapWithConcurrency`) für *alle* aktuell geladenen Schüler:innen
+  (`SvwsApi.getSchuelerLernplattformen()`) die Einwilligungs-Datensätze und sucht darin den zur gewählten
+  Lernplattform passenden. Die Status-Einstufung (`lernplattformResults`) verwendet bewusst **nicht** das
+  Feld `einwilligungAbgefragt` (siehe Fehlerbehebung 17 - in der Praxis nicht zuverlässig gepflegt): kein
+  Datensatz zu der Lernplattform → "keine Einstellung getroffen", sonst entscheidet einzig
+  `einwilligungNutzung` zwischen "zugestimmt"/"abgelehnt"; der Rohwert von `einwilligungAbgefragt` landet
+  trotzdem unverändert in einer eigenen "Abgefragt"-Spalte. `filteredLernplattformRows()` wendet die drei
+  Status-Checkboxen (analog zu `#student-status-filter` in `js/app.js` - live gelesene Checkbox-Auswahl,
+  nicht in `state` persistiert) sowie eine Freitextsuche (Schüler/Klasse) an, `renderLernplattformTable()`
+  rendert daraus die Tabelle. Benutzername/Initialkennwort (Teil desselben API-Datensatzes) werden
+  bewusst nirgends ausgelesen. Rein lesend, keine Lösch-/Änderungsfunktion.
 
 `onExportJson()` / `onImportJson(evt)` / `onResetState()`: eigene Kopien der gleichnamigen Funktionen aus
 `js/app.js` (Schritt 7) - nutzen dieselben `Storage.exportJson()`/`Storage.importJson()`. `onResetState()`

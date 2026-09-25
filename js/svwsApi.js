@@ -299,6 +299,22 @@
     return request("GET", "/lehrer");
   }
 
+  /** Liefert den schulspezifischen Katalog der Lernplattformen (z.B. "IServ", "Moodle", "Teams") - für
+   *  "Einwilligung Lernplattform prüfen" (wartung.html). */
+  async function getLernplattformen() {
+    return request("GET", "/schule/lernplattformen");
+  }
+
+  /** Liefert die Einwilligungs-Datensätze einer/eines Schülerin/Schülers zu allen Lernplattformen, zu
+   *  denen es überhaupt einen Datensatz gibt (leeres Array, wenn noch gar keine Abfrage stattfand) - für
+   *  "Einwilligung Lernplattform prüfen" (wartung.html). Jeder Eintrag trägt u.a.
+   *  `einwilligungAbgefragt`/`einwilligungNutzung` (sowie getrennt `einwilligungAudiokonferenz`/
+   *  `einwilligungVideokonferenz`, hier aktuell nicht ausgewertet) - nicht abschnittsgebunden (die
+   *  Einwilligung gilt schuljahresübergreifend, bis sie geändert wird). */
+  async function getSchuelerLernplattformen(schuelerId) {
+    return request("GET", `/schueler/${schuelerId}/lernplattformen`);
+  }
+
   global.SvwsApi = {
     configure,
     isConfigured,
@@ -322,6 +338,8 @@
     getGostBlockungsdaten,
     getGostAbiturjahrgangLaufbahndaten,
     getLehrer,
+    getLernplattformen,
+    getSchuelerLernplattformen,
     getLernabschnittsdaten,
     createLeistungsdatenMultiple,
     createLeistungsdaten,
